@@ -64,6 +64,8 @@ Los objetivos salen de tus datos con fórmulas estándar, no de números inventa
 - **Metabolismo basal**: Mifflin-St Jeor.
 - **Gasto total**: basal × factor de actividad (1,2 a 1,9).
 - **Meta calórica**: −20% para bajar grasa, +12% para ganar músculo, igual para mantener.
+- **Recomposición** (perder grasa y ganar músculo a la vez): −10% de déficit y 2,4 g de proteína por
+  kilo, que es lo que muestra la evidencia que funciona.
 - **Proteína**: 1,6 a 2,2 g por kilo según objetivo. **Grasa**: 0,8 a 1 g por kilo.
   **Carbohidratos**: las calorías que sobran.
 - **Agua**: 35 ml por kilo + 500 ml por entrenamiento planificado.
@@ -72,6 +74,16 @@ Los objetivos salen de tus datos con fórmulas estándar, no de números inventa
 
 Hay **80 alimentos** de consumo habitual en Chile (marraqueta, completo, empanada de pino, jurel en
 lata, palta, quinoa…) con sus macros, azúcar, sodio y fibra por 100 g y su porción típica.
+
+**¿Perder grasa y ganar músculo a la vez?** La app responde con tus datos en vez de prometer lo mismo
+a todos. La recomposición corporal está documentada, pero funciona donde hay margen: en quien empieza,
+en quien retoma tras una pausa y en quien tiene grasa disponible. En alguien entrenado y ya delgado el
+avance es tan lento que rinde más separar las etapas, y eso **la app se lo dice**, con el plan por
+etapas como alternativa. El veredicto usa la experiencia declarada (o la deducida de las sesiones
+registradas) y el porcentaje de grasa, medido o estimado del IMC con su margen declarado.
+
+Como en recomposición la balanza casi no se mueve, la app pide también el **contorno de cintura** y lo
+grafica aparte: es el indicador que muestra que la grasa baja mientras las cargas suben.
 
 **Comida preparada.** Además de los ingredientes hay **34 platos** de los que se comen fuera de casa,
 con la porción con que se sirven acá: sushi (california, panko, sashimi), parrilla (asado de tira,
@@ -245,7 +257,7 @@ equipo o después de formatear.
 ## Para desarrollar
 
 ```
-npm test        # 284 pruebas del núcleo de cálculo
+npm test        # 308 pruebas del núcleo de cálculo
 npm run servir  # levanta el servidor en el puerto 4173
 ```
 

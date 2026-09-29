@@ -55,10 +55,13 @@ export const acciones = {
   hoy(ctx) { fechaVista = hoyISO(); ctx.refrescar(); },
   guardarPeso(ctx, formulario, evento) {
     evento.preventDefault();
-    const peso = Number(new FormData(formulario).get('peso'));
+    const d = new FormData(formulario);
+    const peso = Number(d.get('peso'));
+    const cintura = Number(d.get('cintura')) || null;
     if (!peso || peso < 25 || peso > 350) { aviso('Ingresa un peso válido en kilos.', 'aviso'); return; }
-    ctx.aplicar((estado) => registrarPeso(estado, peso, hoyISO()));
-    aviso('Peso registrado. Los objetivos se recalcularon.', 'bien');
+    if (cintura && (cintura < 40 || cintura > 200)) { aviso('La cintura debe ir entre 40 y 200 cm.', 'aviso'); return; }
+    ctx.aplicar((estado) => registrarPeso(estado, peso, hoyISO(), cintura));
+    aviso(cintura ? 'Peso y cintura registrados.' : 'Peso registrado. Los objetivos se recalcularon.', 'bien');
   },
   verMenu(ctx, elemento) {
     const tipo = elemento.dataset.tipo;
@@ -383,7 +386,8 @@ export function html(ctx) {
   const esHoy = fechaVista === hoyISO();
   const indiceMasa = imc(estado.perfil.pesoKg, estado.perfil.alturaCm);
   const claseIMC = clasificarIMC(indiceMasa);
-  const proyeccion = proyectarPeso(stats.nutricion.kcalRecientes, dia.objetivos, estado.perfil.pesoKg);
+  const proyeccion = proyectarPeso(stats.nutricion.kcalRecientes, dia.objetivos, estado.perfil.pesoKg, estado.perfil.objetivo);
+  const cinturas = estado.pesos.filter((p) => p.cintura > 0).slice(-30);
 
   const porMomento = new Map();
   for (const r of dia.registros) {
@@ -524,8 +528,13 @@ export function html(ctx) {
     cuerpo: `
       <form class="formulario formulario--linea" data-accion="guardarPeso">
         <label>Peso de hoy (kg)<input type="number" name="peso" step="0.1" min="25" max="350" value="${estado.perfil.pesoKg}"></label>
+        <label>Cintura (cm, opcional)<input type="number" name="cintura" step="0.5" min="40" max="200"
+          value="${ultimaCintura(estado) || ''}" placeholder="en ayunas"></label>
         <button class="boton boton--principal" type="submit">Registrar</button>
       </form>
+      ${estado.perfil.objetivo === 'recomponer'
+      ? '<p class="tenue">Vas en recomposición: <strong>la cintura es tu medida principal</strong>, no el peso. Mídela siempre a la misma hora, en ayunas y sin apretar.</p>'
+      : ''}
       <div class="rejilla rejilla--2">
         ${estadistica({ valor: redondear(indiceMasa, 1), etiqueta: 'IMC', detalle: claseIMC.texto, tono: claseIMC.tono })}
         ${estadistica({ valor: `${num(dia.objetivos.tmb)}`, etiqueta: 'Metabolismo basal', detalle: `gasto total ${num(dia.objetivos.get)} kcal` })}
@@ -537,11 +546,19 @@ export function html(ctx) {
         alto: 150,
       })
       : vacio('Registra tu peso varios días para ver la tendencia.')}
-      ${proyeccion ? `<p class="nota nota--${proyeccion.sostenible ? 'bien' : 'aviso'}">
+      ${cinturas.length >= 2 ? `<h3 class="sub">Cintura</h3>${lineaTiempo({
+        puntos: cinturas.map((p) => ({ etiqueta: p.fecha, valor: p.cintura })),
+        formato: (v) => `${num(v, 1)} cm`,
+        alto: 130,
+      })}<p class="tenue g-nota">De ${num(cinturas[0].cintura, 1)} a ${num(cinturas[cinturas.length - 1].cintura, 1)} cm
+        (${cinturas[cinturas.length - 1].cintura - cinturas[0].cintura > 0 ? '+' : ''}${redondear(cinturas[cinturas.length - 1].cintura - cinturas[0].cintura, 1)} cm).</p>` : ''}
+      ${proyeccion ? (proyeccion.pesoNoEsLaMedida
+      ? `<p class="nota nota--info"><span class="nota__icono">i</span><span>${esc(proyeccion.nota)}</span></p>`
+      : `<p class="nota nota--${proyeccion.sostenible ? 'bien' : 'aviso'}">
         <span class="nota__icono">${proyeccion.sostenible ? '✓' : '!'}</span>
         <span>Con un promedio de ${num(proyeccion.promedioKcal)} kcal al día tu balance es de ${proyeccion.balanceDiario > 0 ? '+' : ''}${num(proyeccion.balanceDiario)} kcal:
         eso proyecta ${proyeccion.kgPorSemana > 0 ? '+' : ''}${proyeccion.kgPorSemana} kg por semana y ${num(proyeccion.pesoEn4Semanas, 1)} kg en un mes.
-        ${proyeccion.sostenible ? 'Es un ritmo sostenible.' : 'Es un ritmo demasiado agresivo: se pierde músculo y se recupera rápido.'}</span></p>` : ''}`,
+        ${proyeccion.sostenible ? 'Es un ritmo sostenible.' : 'Es un ritmo demasiado agresivo: se pierde músculo y se recupera rápido.'}</span></p>`) : ''}`,
   })}
       ${tarjeta({
     titulo: 'Calorías de los últimos 14 días',
@@ -588,6 +605,11 @@ export function html(ctx) {
       </div>`,
   })}
   </div>`;
+}
+
+function ultimaCintura(estado) {
+  const con = estado.pesos.filter((p) => p.cintura > 0);
+  return con.length ? con[con.length - 1].cintura : null;
 }
 
 function resultadosBusqueda(ctx) {

@@ -494,6 +494,18 @@ input[type='number'] { font-variant-numeric: tabular-nums; }
 .cronometro__relleno { height: 100%; background: var(--acento); border-radius: 999px; transition: width 1s linear; }
 .cronometro__pie { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
 
+.pasos { counter-reset: paso; display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.pasos li {
+  counter-increment: paso; position: relative; padding-left: 30px;
+  font-size: .85rem; color: var(--ink-2); line-height: 1.45;
+}
+.pasos li::before {
+  content: counter(paso); position: absolute; left: 0; top: 1px;
+  width: 21px; height: 21px; border-radius: 50%;
+  background: var(--acento); color: #fff;
+  display: grid; place-items: center; font-size: .72rem; font-weight: 800;
+}
+
 .calentamiento { display: flex; flex-direction: column; gap: 9px; counter-reset: paso; }
 .calentamiento li {
   display: flex; flex-direction: column; gap: 2px;

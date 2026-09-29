@@ -36,6 +36,8 @@ export function estadoInicial() {
       comidas: 4,
       tonoPiel: 'medio',
       ingresoMensual: 0,
+      experiencia: '',        // novato | intermedio | avanzado | retomando
+      grasaCorporal: 0,       // si la persona la conoce; 0 = se estima del IMC
     },
     habitos: habitosIniciales(),
     registrosHabitos: {},        // { fecha: { habitoId: valor } }
@@ -509,9 +511,17 @@ export function borrarMeta(estado, metaId) {
   return { ...estado, metas: estado.metas.filter((m) => m.id !== metaId) };
 }
 
-export function registrarPeso(estado, peso, fecha = hoyISO()) {
+/* La cintura va junto al peso porque es la otra mitad de la medición: en
+   recomposición el peso no se mueve y la cintura sí, y quien solo mira la
+   balanza concluye que no está pasando nada. */
+export function registrarPeso(estado, peso, fecha = hoyISO(), cintura = null) {
+  const previo = estado.pesos.find((p) => p.fecha === fecha);
   const resto = estado.pesos.filter((p) => p.fecha !== fecha);
-  const pesos = [...resto, { fecha, peso: Number(peso) }].sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const registro = { fecha, peso: Number(peso) };
+  const cinturaNueva = Number(cintura);
+  if (cinturaNueva > 0) registro.cintura = cinturaNueva;
+  else if (previo?.cintura) registro.cintura = previo.cintura;
+  const pesos = [...resto, registro].sort((a, b) => a.fecha.localeCompare(b.fecha));
   return { ...estado, pesos, perfil: { ...estado.perfil, pesoKg: Number(peso) } };
 }
 

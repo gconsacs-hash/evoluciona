@@ -14,9 +14,21 @@ export const FACTORES_ACTIVIDAD = {
 
 export const OBJETIVOS = {
   perder: { etiqueta: 'Bajar grasa', ajuste: -0.2, protPorKg: 2.0, grasaPorKg: 0.8 },
-  recomponer: { etiqueta: 'Recomposición (mantener peso, ganar músculo)', ajuste: 0, protPorKg: 2.0, grasaPorKg: 0.9 },
+  /* Recomposición: perder grasa y ganar músculo a la vez. Es posible, pero no
+     para cualquiera ni en cualquier momento (ver viabilidadRecomposicion).
+     Los parámetros salen de lo que muestra la evidencia que funciona: déficit
+     moderado —no agresivo— y proteína claramente más alta que en una dieta
+     normal de definición. */
+  recomponer: { etiqueta: 'Perder grasa y ganar músculo a la vez', ajuste: -0.1, protPorKg: 2.4, grasaPorKg: 0.9 },
   ganar: { etiqueta: 'Ganar músculo', ajuste: 0.12, protPorKg: 1.8, grasaPorKg: 1.0 },
   salud: { etiqueta: 'Salud y mantención', ajuste: 0, protPorKg: 1.6, grasaPorKg: 1.0 },
+};
+
+export const EXPERIENCIA = {
+  novato: { etiqueta: 'Menos de 6 meses entrenando', meses: 3 },
+  intermedio: { etiqueta: 'Entre 6 meses y 2 años', meses: 15 },
+  avanzado: { etiqueta: 'Más de 2 años entrenando en serio', meses: 36 },
+  retomando: { etiqueta: 'Retomando tras una pausa larga', meses: 1 },
 };
 
 /** Metabolismo basal — Mifflin-St Jeor (kcal/día). */
@@ -244,17 +256,148 @@ export function repartirComidas(objetivos, numeroComidas = 4) {
   }));
 }
 
+/**
+ * Estimación de grasa corporal a partir del IMC (fórmula de Deurenberg).
+ * Es una estimación poblacional con un error de alrededor de ±5 puntos: sirve
+ * para orientar una decisión, no para ponerla en una ficha. Si la persona sabe
+ * su porcentaje real (balanza de bioimpedancia, caliper, DEXA), ese manda.
+ */
+export function estimarGrasaCorporal({ sexo, edad, pesoKg, alturaCm }) {
+  const imcValor = imc(pesoKg, alturaCm);
+  const esHombre = sexo !== 'femenino' ? 1 : 0;
+  const bruto = 1.20 * imcValor + 0.23 * edad - 10.8 * esHombre - 5.4;
+  return { valor: redondear(limitar(bruto, 3, 70), 1), estimado: true, margen: 5 };
+}
+
+/* Umbrales de grasa corporal desde donde la recomposición se vuelve más fácil
+   o más difícil. Son referencias de uso común, no cortes exactos. */
+const GRASA = {
+  masculino: { alta: 20, baja: 12 },
+  femenino: { alta: 30, baja: 20 },
+};
+
+/**
+ * ¿Es realista para esta persona perder grasa y ganar músculo al mismo tiempo?
+ *
+ * La recomposición está documentada, pero no en todos: funciona cuando hay
+ * margen de mejora. Quien recién parte, quien vuelve tras una pausa y quien
+ * tiene reservas de grasa que movilizar la consiguen con cierta facilidad.
+ * Alguien entrenado y ya delgado avanza tan lento que le rinde más separar las
+ * etapas. Esta función dice cuál de los dos casos es, en vez de prometer lo
+ * mismo a todos.
+ */
+export function viabilidadRecomposicion(perfil, datos = {}) {
+  const { sesionesRegistradas = 0 } = datos;
+  const sexo = perfil.sexo === 'femenino' ? 'femenino' : 'masculino';
+  const umbral = GRASA[sexo];
+
+  const declarada = Number(perfil.grasaCorporal) > 0 ? Number(perfil.grasaCorporal) : null;
+  const estimacion = estimarGrasaCorporal(perfil);
+  const grasa = declarada !== null ? declarada : estimacion.valor;
+  const esEstimada = declarada === null;
+
+  // Si no declaró experiencia, se infiere de lo que lleva registrado en la app.
+  const experiencia = perfil.experiencia
+    || (sesionesRegistradas >= 80 ? 'avanzado' : sesionesRegistradas >= 25 ? 'intermedio' : 'novato');
+
+  const grasaAlta = grasa >= umbral.alta;
+  const grasaBaja = grasa <= umbral.baja;
+  const motivos = [];
+
+  let nivel;
+  if (experiencia === 'novato' || experiencia === 'retomando') {
+    nivel = 'alta';
+    motivos.push(experiencia === 'retomando'
+      ? 'Vuelves tras una pausa: el músculo que ya tuviste se recupera mucho más rápido de lo que costó ganarlo la primera vez.'
+      : 'Llevas poco tiempo entrenando, y ese es el período en que el cuerpo responde más a cualquier estímulo.');
+  } else if (grasaAlta) {
+    nivel = experiencia === 'avanzado' ? 'media' : 'alta';
+    motivos.push(`Con ${esEstimada ? 'una grasa corporal estimada en' : 'un'} ${grasa}%, hay reservas de sobra que tu cuerpo puede usar como energía mientras construye músculo.`);
+  } else if (experiencia === 'avanzado' && grasaBaja) {
+    nivel = 'baja';
+    motivos.push(`Entrenas hace años y ya estás en ${grasa}% de grasa. En ese punto las dos cosas compiten de verdad: avanzarías tan lento que cuesta distinguirlo de no avanzar.`);
+  } else {
+    nivel = 'media';
+    motivos.push('Estás en una zona intermedia: se puede, pero el avance será lento y hay que ser muy consistente para notarlo.');
+  }
+
+  if (esEstimada) {
+    motivos.push(`El ${grasa}% es una estimación a partir de tu IMC, con un margen de unos ±${estimacion.margen} puntos. Si conoces tu porcentaje real, anótalo en el perfil y este análisis mejora.`);
+  }
+
+  const requisitos = [
+    `Proteína alta: ${Math.round(perfil.pesoKg * OBJETIVOS.recomponer.protPorKg)} g al día (${OBJETIVOS.recomponer.protPorKg} g por kilo). Sin esto, no ocurre.`,
+    'Déficit suave, no agresivo: la app usa 10% bajo tu gasto. Un déficit grande hace bajar de peso, pero se lleva músculo con la grasa.',
+    'Entrenamiento de fuerza al menos 3 días por semana, subiendo carga o repeticiones. El estímulo es lo que decide si el peso que pierdes es grasa o músculo.',
+    'Dormir 7 a 9 horas. Es donde se repara el músculo, y dormir mal echa abajo el resto.',
+    'Meses, no semanas. La recomposición es lenta por definición.',
+  ];
+
+  const comoMedirlo = [
+    'La balanza casi no se va a mover, y eso es lo esperado: estás cambiando grasa por músculo.',
+    'Mide el contorno de cintura una vez por semana, en ayunas: es el mejor indicador casero de que la grasa baja.',
+    'Mira tus cargas en la app. Si suben mientras la cintura baja, la recomposición está ocurriendo.',
+    'Fotos cada 4 semanas, misma luz y misma hora.',
+  ];
+
+  const textos = {
+    alta: {
+      titulo: 'Sí, en tu caso es realista',
+      explicacion: 'Estás en el escenario donde la recomposición sí funciona. Si cumples las condiciones de abajo, deberías ver la cintura bajar mientras las cargas suben.',
+    },
+    media: {
+      titulo: 'Se puede, pero va a ser lento',
+      explicacion: 'No es imposible, pero el avance será discreto y difícil de notar mes a mes. Si tienes prisa por un resultado visible, conviene separar las etapas.',
+    },
+    baja: {
+      titulo: 'Te va a rendir más hacerlo por etapas',
+      explicacion: 'En tu punto de entrenamiento y grasa corporal, perseguir las dos cosas a la vez suele terminar en ninguna. Separarlo en etapas —primero bajar grasa, después ganar músculo— avanza más en el mismo tiempo.',
+    },
+  };
+
+  const salida = {
+    nivel,
+    ...textos[nivel],
+    grasaCorporal: grasa,
+    grasaEstimada: esEstimada,
+    experiencia,
+    motivos,
+    requisitos,
+    comoMedirlo,
+  };
+
+  if (nivel === 'baja') {
+    salida.alternativa = {
+      titulo: 'Por etapas',
+      pasos: [
+        'Primero una etapa de definición de 8 a 12 semanas con déficit moderado y proteína alta, para bajar la grasa.',
+        'Después una etapa de volumen con superávit pequeño (10%) para ganar músculo con la menor grasa posible.',
+        'Repetir el ciclo. Se avanza más en un año así que persiguiendo las dos cosas todo el tiempo.',
+      ],
+    };
+  }
+  return salida;
+}
+
 /** Proyección de cambio de peso según el déficit o superávit real de los últimos días. */
-export function proyectarPeso(historialKcal, objetivos, pesoActual) {
+export function proyectarPeso(historialKcal, objetivos, pesoActual, objetivo = null) {
   if (!historialKcal.length) return null;
   const promedio = suma(historialKcal) / historialKcal.length;
   const balanceDiario = promedio - objetivos.get;
   const kgPorSemana = redondear((balanceDiario * 7) / 7700, 2); // 7700 kcal ≈ 1 kg de grasa
-  return {
+  const salida = {
     promedioKcal: Math.round(promedio),
     balanceDiario: Math.round(balanceDiario),
     kgPorSemana,
     pesoEn4Semanas: redondear(pesoActual + kgPorSemana * 4, 1),
     sostenible: Math.abs(kgPorSemana) <= limitar(pesoActual * 0.01, 0.3, 1),
   };
+  /* En recomposición la proyección de peso engaña: el objetivo es cambiar la
+     composición, no el número de la balanza. Se declara para que nadie lea una
+     bajada mínima como falta de resultados. */
+  if (objetivo === 'recomponer') {
+    salida.pesoNoEsLaMedida = true;
+    salida.nota = 'Vas en recomposición: el peso casi no debería moverse, porque estás cambiando grasa por músculo. Mide el avance con la cintura y con tus cargas, no con la balanza.';
+  }
+  return salida;
 }

@@ -1,7 +1,10 @@
 // Perfil: datos personales, objetivos calculados, apariencia del avatar y respaldo de datos.
 
 import { tarjeta, estadistica, aviso, esc, modal, cerrarModal } from './comun.js';
-import { FACTORES_ACTIVIDAD, OBJETIVOS, calcularObjetivos, imc, clasificarIMC } from '../nucleo/nutricion.js';
+import {
+  FACTORES_ACTIVIDAD, OBJETIVOS, EXPERIENCIA, calcularObjetivos, imc, clasificarIMC,
+  viabilidadRecomposicion, estimarGrasaCorporal,
+} from '../nucleo/nutricion.js';
 import { EQUIPOS } from '../datos/ejercicios.js';
 import { TONOS_PIEL, dibujarAvatar } from '../nucleo/avatar.js';
 import { atuendosDesbloqueados, aurasDesbloqueadas, temasDesbloqueados, tieneEfecto } from '../nucleo/tienda.js';
@@ -26,6 +29,8 @@ export const acciones = {
       comidas: Number(d.comidas) || 4,
       tonoPiel: d.tonoPiel,
       ingresoMensual: Number(d.ingresoMensual) || 0,
+      experiencia: d.experiencia || '',
+      grasaCorporal: Number(d.grasaCorporal) || 0,
     };
     if (perfil.edad < 12 || perfil.edad > 100) { aviso('Ingresa una edad entre 12 y 100 años.', 'aviso'); return; }
     if (perfil.alturaCm < 120 || perfil.alturaCm > 230) { aviso('Ingresa una altura entre 120 y 230 cm.', 'aviso'); return; }
@@ -166,6 +171,16 @@ export function html(ctx) {
           ${Object.entries(OBJETIVOS).map(([k, v]) => `<option value="${k}" ${p.objetivo === k ? 'selected' : ''}>${esc(v.etiqueta)}</option>`).join('')}
         </select></label>
         <div class="formulario__fila">
+          <label>Experiencia entrenando<select name="experiencia">
+            <option value="">Deducirla de mis registros</option>
+            ${Object.entries(EXPERIENCIA).map(([k, v]) => `<option value="${k}" ${p.experiencia === k ? 'selected' : ''}>${esc(v.etiqueta)}</option>`).join('')}
+          </select></label>
+          <label>Grasa corporal (%, si la conoces)
+            <input type="number" name="grasaCorporal" min="0" max="70" step="0.1" value="${p.grasaCorporal || ''}" placeholder="se estima del IMC"></label>
+        </div>
+        <p class="tenue">Estos dos datos solo se usan para decirte si "perder grasa y ganar músculo a la vez" es
+          realista en tu caso. Si no los pones, se estiman.</p>
+        <div class="formulario__fila">
           <label>Días de entrenamiento por semana<input type="number" name="diasEntreno" min="2" max="6" value="${p.diasEntreno}"></label>
           <label>Equipo disponible<select name="equipo">
             ${Object.entries(EQUIPOS).map(([k, v]) => `<option value="${k}" ${p.equipo === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}
@@ -181,6 +196,8 @@ export function html(ctx) {
         <div class="formulario__pie"><button type="submit" class="boton boton--principal">Guardar perfil</button></div>
       </form>`,
   })}
+
+    ${p.objetivo === 'recomponer' ? tarjetaRecomposicion(ctx, p) : ''}
 
     ${tarjeta({
     titulo: 'Lo que la app calcula con esos datos',
@@ -290,6 +307,56 @@ export function html(ctx) {
       </ul>`,
   })}
   </div>`;
+}
+
+/* Veredicto sobre la recomposición. Se muestra completo, con el "no" incluido:
+   prometerle a alguien entrenado y delgado que va a lograr las dos cosas a la
+   vez es la forma más rápida de que abandone en dos meses. */
+function tarjetaRecomposicion(ctx, p) {
+  const v = viabilidadRecomposicion(p, { sesionesRegistradas: ctx.stats.entreno.sesiones });
+  const tono = { alta: 'bien', media: 'aviso', baja: 'mal' }[v.nivel];
+  const objetivos = calcularObjetivos(p);
+
+  return tarjeta({
+    titulo: '¿Es posible perder grasa y ganar músculo a la vez?',
+    extra: `<span class="marca marca--${tono}">${v.nivel === 'alta' ? '✓ sí' : v.nivel === 'media' ? '! con matices' : '✕ no en tu caso'}</span>`,
+    cuerpo: `
+      <p class="nota nota--${tono}"><span class="nota__icono">${v.nivel === 'alta' ? '✓' : v.nivel === 'media' ? '!' : '✕'}</span>
+        <span><strong>${esc(v.titulo)}.</strong> ${esc(v.explicacion)}</span></p>
+
+      <div class="rejilla rejilla--3">
+        ${estadistica({
+      valor: `${v.grasaCorporal}%`,
+      etiqueta: 'Grasa corporal',
+      detalle: v.grasaEstimada ? 'estimada del IMC (±5 puntos)' : 'la que declaraste',
+    })}
+        ${estadistica({
+      valor: esc(EXPERIENCIA[v.experiencia]?.etiqueta.split(' ').slice(0, 3).join(' ') || v.experiencia),
+      etiqueta: 'Experiencia',
+      detalle: p.experiencia ? 'declarada por ti' : 'deducida de tus sesiones',
+    })}
+        ${estadistica({ valor: `${num(objetivos.prot)} g`, etiqueta: 'Proteína diaria necesaria', detalle: `${OBJETIVOS.recomponer.protPorKg} g por kilo` })}
+      </div>
+
+      <h3 class="sub">Por qué</h3>
+      <ul class="lista-check">${v.motivos.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>
+
+      <h3 class="sub">Lo que tiene que cumplirse</h3>
+      <ul class="lista-check">${v.requisitos.map((r) => `<li>✓ ${esc(r)}</li>`).join('')}</ul>
+
+      <h3 class="sub">Cómo vas a saber si está funcionando</h3>
+      <ul class="lista-check">${v.comoMedirlo.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>
+
+      ${v.alternativa ? `
+        <div class="aviso-pago">
+          <strong>${esc(v.alternativa.titulo)}</strong>
+          <ol class="pasos">${v.alternativa.pasos.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>
+        </div>` : ''}
+
+      <p class="tenue g-nota">La recomposición corporal está documentada en personas que empiezan, que retoman tras una
+        pausa o que tienen grasa disponible. En alguien entrenado y ya delgado el avance es tan lento que suele rendir
+        más separar las etapas. Esta evaluación usa tus datos, no una regla general.</p>`,
+  });
 }
 
 /** Pantalla de bienvenida para la primera vez. */
