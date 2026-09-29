@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="flechaM" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#3987e5"/>
+      <stop offset="100%" stop-color="#199e70"/>
+    </linearGradient>
+  </defs>
+  <!-- Versión enmascarable: todo el contenido dentro del 80% central seguro -->
+  <rect width="512" height="512" fill="#0d1117"/>
+  <g fill="url(#flechaM)">
+    <rect x="150" y="318" width="60" height="62" rx="15"/>
+    <rect x="226" y="272" width="60" height="108" rx="15"/>
+    <rect x="302" y="212" width="60" height="168" rx="15"/>
+  </g>
+  <circle cx="370" cy="164" r="26" fill="#c98500"/>
+  <path d="M156 186 L196 146 L236 186" fill="none" stroke="#3987e5" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M196 146 L196 254" fill="none" stroke="#3987e5" stroke-width="20" stroke-linecap="round"/>
+</svg>

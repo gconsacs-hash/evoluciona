@@ -1,0 +1,12 @@
+{
+  "name": "evoluciona",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "PWA local de rutinas diarias, entrenamiento con progresión, nutrición y finanzas personales, con avatar evolutivo y economía de tokens.",
+  "scripts": {
+    "test": "node --test \"pruebas/*.test.js\"",
+    "servir": "node servidor.js",
+    "start": "node servidor.js"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "Evoluciona — rutina, cuerpo y dinero",
+  "short_name": "Evoluciona",
+  "description": "Rutinas diarias, entrenamiento con progresión, control de calorías y finanzas personales, con un avatar que evoluciona según tu progreso real.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "lang": "es-CL",
+  "dir": "ltr",
+  "categories": ["health", "fitness", "finance", "lifestyle"],
+  "icons": [
+    { "src": "./iconos/icono-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./iconos/icono-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./iconos/icono-mascara-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "./iconos/icono.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Registrar comida", "url": "./index.html#nutricion" },
+    { "name": "Entrenar", "url": "./index.html#entreno" },
+    { "name": "Anotar gasto", "url": "./index.html#finanzas" }
+  ]
+}
