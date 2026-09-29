@@ -14,6 +14,7 @@ import {
   evaluarPresupuesto, puntajeFinanciero, CATEGORIAS_GASTO,
 } from './finanzas.js';
 import { progresoInicial, otorgar, revisarLogros, calcularAtributos, nivelDesdeXP, detalleNivel } from './progreso.js';
+import { perfilInicial as perfilDiabetesInicial } from './diabetes.js';
 
 export const CLAVE_ALMACEN = 'evoluciona.estado.v1';
 const VERSION = 1;
@@ -42,6 +43,9 @@ export function estadoInicial() {
     productos: {},               // { codigoDeBarras: producto } — despensa escaneada
     aguaExtra: {},               // { fecha: ml }
     pesos: [],                   // [ {fecha, peso} ]
+    diabetes: perfilDiabetesInicial(),
+    glicemias: [],               // [ {id, fecha, hora, valor, momento, nota} ]
+    insulina: [],                // [ {id, fecha, hora, tipo, unidades, nota} ]
     entrenamientos: [],          // [ {id, fecha, semana, nombre, tier, duracionMin, ejercicios} ]
     planSemanal: null,           // { semana, sesiones }
     movimientos: [],             // [ {id, fecha, tipo, categoria, monto, nota} ]
@@ -98,7 +102,16 @@ export function migrar(datos) {
     version: VERSION,
     perfil: { ...base.perfil, ...(datos.perfil || {}) },
     progreso: { ...base.progreso, ...(datos.progreso || {}), avatar: { ...base.progreso.avatar, ...(datos.progreso?.avatar || {}) } },
+    diabetes: {
+      ...base.diabetes,
+      ...(datos.diabetes || {}),
+      rango: { ...base.diabetes.rango, ...(datos.diabetes?.rango || {}) },
+      esquema: { ...base.diabetes.esquema, ...(datos.diabetes?.esquema || {}) },
+    },
   };
+  for (const campo of ['glicemias', 'insulina']) {
+    if (!Array.isArray(estado[campo])) estado[campo] = [];
+  }
   if (!Array.isArray(estado.habitos) || !estado.habitos.length) estado.habitos = habitosIniciales();
   for (const campo of ['registrosHabitos', 'comidas', 'aguaExtra', 'presupuesto', 'productos']) {
     if (!estado[campo] || typeof estado[campo] !== 'object') estado[campo] = {};
@@ -333,6 +346,21 @@ export function repartirRecompensas(estado) {
     }
   }
 
+  /* Diabetes: se paga registrar, nunca el valor obtenido. Un día "malo" da
+     exactamente los mismos puntos que uno bueno, porque lo que queremos
+     sostener es el hábito de medir y de anotarlo todo. */
+  const fechasConGlicemia = new Map();
+  for (const g of estado.glicemias) {
+    registrar('glicemia_registrada', `gli:${g.id}`, { texto: 'Glicemia registrada' });
+    fechasConGlicemia.set(g.fecha, (fechasConGlicemia.get(g.fecha) || 0) + 1);
+  }
+  for (const [fecha, cantidad] of fechasConGlicemia) {
+    if (cantidad >= 3) registrar('dia_glicemias', `glidia:${fecha}`, { texto: `Controles del día (${fecha})` });
+  }
+  for (const d of estado.insulina) {
+    registrar('insulina_registrada', `ins:${d.id}`, { texto: 'Dosis registrada' });
+  }
+
   // Logros, con las estadísticas ya actualizadas
   const estadoParcial = { ...estado, progreso };
   const stats = estadisticas(estadoParcial);
@@ -359,6 +387,48 @@ export function agregarComida(estado, { alimentoId, gramos, momento }, fecha = h
 export function quitarComida(estado, registroId, fecha = hoyISO()) {
   const lista = (estado.comidas[fecha] || []).filter((r) => r.id !== registroId);
   return { ...estado, comidas: { ...estado.comidas, [fecha]: lista } };
+}
+
+// --- Diabetes ---
+
+export function guardarPerfilDiabetes(estado, perfil) {
+  return { ...estado, diabetes: { ...estado.diabetes, ...perfil } };
+}
+
+export function registrarGlicemia(estado, datos) {
+  const registro = {
+    id: datos.id || nuevoId('gli'),
+    fecha: datos.fecha || hoyISO(),
+    hora: datos.hora || '',
+    valor: Math.max(0, Number(datos.valor) || 0),
+    momento: datos.momento || '',
+    nota: (datos.nota || '').trim(),
+  };
+  if (!registro.valor) return estado;
+  const resto = estado.glicemias.filter((g) => g.id !== registro.id);
+  return { ...estado, glicemias: [...resto, registro] };
+}
+
+export function borrarGlicemia(estado, id) {
+  return { ...estado, glicemias: estado.glicemias.filter((g) => g.id !== id) };
+}
+
+export function registrarInsulina(estado, datos) {
+  const registro = {
+    id: datos.id || nuevoId('ins'),
+    fecha: datos.fecha || hoyISO(),
+    hora: datos.hora || '',
+    tipo: datos.tipo || 'bolo',
+    unidades: Math.max(0, Number(datos.unidades) || 0),
+    nota: (datos.nota || '').trim(),
+  };
+  if (!registro.unidades) return estado;
+  const resto = estado.insulina.filter((d) => d.id !== registro.id);
+  return { ...estado, insulina: [...resto, registro] };
+}
+
+export function borrarInsulina(estado, id) {
+  return { ...estado, insulina: estado.insulina.filter((d) => d.id !== id) };
 }
 
 /** Guarda un producto escaneado en la despensa y lo deja buscable. */

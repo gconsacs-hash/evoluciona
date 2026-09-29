@@ -11,16 +11,24 @@ import * as nutricion from './ui/vista-nutricion.js';
 import * as finanzas from './ui/vista-finanzas.js';
 import * as tienda from './ui/vista-tienda.js';
 import * as perfil from './ui/vista-perfil.js';
+import * as diabetes from './ui/vista-diabetes.js';
 
 const VISTAS = {
   panel: { modulo: panel, nombre: 'Panel', icono: '🧍' },
   rutina: { modulo: rutina, nombre: 'Rutina', icono: '🔥' },
   entreno: { modulo: entreno, nombre: 'Entrenar', icono: '🏋️' },
   nutricion: { modulo: nutricion, nombre: 'Nutrición', icono: '🥗' },
+  // Solo aparece si la persona la activa en su perfil: la app no supone que
+  // alguien tiene diabetes.
+  diabetes: { modulo: diabetes, nombre: 'Diabetes', icono: '🩸', opcional: (e) => e.diabetes?.activo },
   finanzas: { modulo: finanzas, nombre: 'Finanzas', icono: '💰' },
   tienda: { modulo: tienda, nombre: 'Tienda', icono: '🛍️' },
   perfil: { modulo: perfil, nombre: 'Perfil', icono: '⚙️' },
 };
+
+function vistasVisibles() {
+  return Object.entries(VISTAS).filter(([, v]) => !v.opcional || v.opcional(estado));
+}
 
 let estado = cargar();
 let stats = estadisticas(estado);
@@ -97,12 +105,15 @@ function render() {
     return;
   }
 
+  // Si la vista activa dejó de estar disponible (se desactivó diabetes), se vuelve al panel.
+  if (!vistasVisibles().some(([clave]) => clave === vistaActual)) vistaActual = 'panel';
+
   const vista = VISTAS[vistaActual];
   raiz.innerHTML = `
     <nav class="nav" aria-label="Secciones">
       <div class="nav__marca">Evoluciona</div>
       <div class="nav__enlaces">
-        ${Object.entries(VISTAS).map(([clave, v]) => `
+        ${vistasVisibles().map(([clave, v]) => `
           <button class="nav__enlace ${clave === vistaActual ? 'nav__enlace--activo' : ''}"
             data-accion="navegar" data-vista="${clave}" aria-current="${clave === vistaActual}">
             <span aria-hidden="true">${v.icono}</span><span class="nav__texto">${v.nombre}</span>

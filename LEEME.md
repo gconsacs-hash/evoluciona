@@ -1,4 +1,4 @@
-# Evoluciona
+﻿# Evoluciona
 
 Aplicación local que junta cuatro cosas que normalmente viven en cuatro apps distintas —
 rutina diaria, entrenamiento, alimentación y finanzas personales— y las conecta a **un avatar
@@ -102,6 +102,31 @@ Los consejos apuntan a montos concretos: "Vivienda se lleva 50,9% de tus gastos 
 recortas un 15% liberas $63.000 al mes".
 
 ---
+
+### 🩸 Diabetes (opcional)
+
+Apagada por omisión: se activa desde el perfil. Sirve para diabetes tipo 1, tipo 2, gestacional o
+prediabetes, con medición capilar registrada a mano.
+
+- **Glicemias** con momento del día (ayunas, después de almuerzo, madrugada…) y clasificación
+  automática según los umbrales clínicos.
+- **Tiempo en rango**, que es el indicador que hoy se mira en consulta, más que el promedio. Con las
+  metas del consenso internacional: sobre 70% en rango, bajo 4% en hipoglicemia, variabilidad ≤36%.
+- **HbA1c estimada (GMI)** a partir del promedio, declarada siempre como estimación.
+- **Patrones por hora del día**: es lo que encuentra el problema real, del tipo "siempre se va abajo
+  de madrugada". Ese hallazgo es el que cambia un tratamiento.
+- **Registro de insulina** puesta, con el esquema del médico a la vista.
+- **Informe para el control**, imprimible o guardable en PDF.
+- **Ante una hipoglicemia** muestra la regla 15/15 y, si es grave, que es una urgencia.
+
+**Lo que esta sección NO hace, a propósito:** no calcula ni sugiere dosis de insulina. Las razones de
+cada persona las fija su médico y cambian con el tiempo; un error de cálculo ahí puede causar una
+hipoglicemia grave, y un software que decide dosis es un dispositivo médico regulado. La app muestra
+los carbohidratos del plato y recuerda el esquema indicado: la decisión queda en quien corresponde.
+
+Una decisión de diseño que vale la pena explicar: **se dan puntos por medir y registrar, nunca por el
+valor obtenido.** Premiar una "buena" glicemia castigaría a alguien por un número que no controla del
+todo, y empujaría a no registrar los días malos, que son justamente los que el médico necesita ver.
 
 ## El avatar
 
@@ -220,7 +245,7 @@ equipo o después de formatear.
 ## Para desarrollar
 
 ```
-npm test        # 245 pruebas del núcleo de cálculo
+npm test        # 284 pruebas del núcleo de cálculo
 npm run servir  # levanta el servidor en el puerto 4173
 ```
 

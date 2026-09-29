@@ -21,6 +21,13 @@ export const REGLAS = {
   dia_calorias: { xp: 30, tokens: 5, texto: 'Día en meta calórica' },
   dia_proteina: { xp: 20, tokens: 3, texto: 'Proteína del día cubierta' },
   dia_agua: { xp: 15, tokens: 2, texto: 'Hidratación del día completa' },
+  /* En diabetes se premia SOLO el acto de medir y registrar, nunca el número.
+     Dar puntos por "buena" glicemia sería castigar a alguien por un valor que
+     no controla del todo, y empujaría a no registrar los días malos, que son
+     justamente los que el médico necesita ver. */
+  glicemia_registrada: { xp: 6, tokens: 1, texto: 'Glicemia registrada' },
+  dia_glicemias: { xp: 20, tokens: 2, texto: 'Día con controles completos' },
+  insulina_registrada: { xp: 4, tokens: 0, texto: 'Dosis registrada' },
   gasto_registrado: { xp: 4, tokens: 0, texto: 'Movimiento registrado' },
   dia_finanzas: { xp: 15, tokens: 2, texto: 'Día con finanzas al día' },
   mes_presupuesto: { xp: 300, tokens: 40, texto: 'Mes dentro del presupuesto' },

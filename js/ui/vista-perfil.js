@@ -5,7 +5,8 @@ import { FACTORES_ACTIVIDAD, OBJETIVOS, calcularObjetivos, imc, clasificarIMC } 
 import { EQUIPOS } from '../datos/ejercicios.js';
 import { TONOS_PIEL, dibujarAvatar } from '../nucleo/avatar.js';
 import { atuendosDesbloqueados, aurasDesbloqueadas, temasDesbloqueados, tieneEfecto } from '../nucleo/tienda.js';
-import { exportar, importar, estadoInicial } from '../nucleo/almacen.js';
+import { exportar, importar, estadoInicial, guardarPerfilDiabetes } from '../nucleo/almacen.js';
+import { TIPOS as TIPOS_DIABETES, RANGOS, UNIDADES } from '../nucleo/diabetes.js';
 import { num, redondear, hoyISO } from '../nucleo/utiles.js';
 
 export const acciones = {
@@ -52,6 +53,21 @@ export const acciones = {
       progreso: { ...estado.progreso, avatar: { ...estado.progreso.avatar, atuendo: d.atuendo, aura: d.aura || null } },
     }));
     aviso('Apariencia actualizada.', 'bien');
+  },
+
+  guardarDiabetes(ctx, formulario, evento) {
+    evento.preventDefault();
+    const d = Object.fromEntries(new FormData(formulario));
+    const activo = d.activo === 'on';
+    const rango = d.rango === 'gestacional' ? RANGOS.gestacional : RANGOS.estandar;
+    ctx.aplicar((estado) => guardarPerfilDiabetes(estado, {
+      activo,
+      tipo: d.tipo,
+      usaInsulina: d.usaInsulina === 'on',
+      unidad: d.unidad,
+      rango: { ...rango },
+    }));
+    aviso(activo ? 'Sección de diabetes activada. Aparece en el menú.' : 'Sección de diabetes desactivada.', 'bien');
   },
 
   exportar(ctx) {
@@ -212,6 +228,38 @@ export function html(ctx) {
           <div class="formulario__pie"><button type="submit" class="boton boton--principal">Aplicar</button></div>
         </form>
       </div>`,
+  })}
+
+    ${tarjeta({
+    titulo: 'Seguimiento de diabetes',
+    cuerpo: `
+      <p class="tenue">Si tienes diabetes o prediabetes, la app puede registrar tus glicemias, mostrar tu
+        tiempo en rango, detectar patrones por hora del día y armar un informe para llevar al control.
+        Queda apagado por omisión.</p>
+      <p class="nota nota--info"><span class="nota__icono">i</span><span>La app <strong>registra y muestra</strong>.
+        <strong>No calcula ni sugiere dosis de insulina</strong>, porque esa indicación depende de parámetros que fija
+        tu médico y un error ahí es peligroso. Tampoco reemplaza controles ni exámenes.</span></p>
+      <form class="formulario" data-accion="guardarDiabetes">
+        <label class="etiqueta-inline">
+          <input type="checkbox" name="activo" ${estado.diabetes.activo ? 'checked' : ''} style="width:auto">
+          Activar la sección de diabetes</label>
+        <div class="formulario__fila">
+          <label>Tipo<select name="tipo">
+            ${Object.entries(TIPOS_DIABETES).map(([k, v]) => `<option value="${k}" ${estado.diabetes.tipo === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}
+          </select></label>
+          <label>Rango objetivo<select name="rango">
+            <option value="estandar" ${estado.diabetes.rango?.max !== RANGOS.gestacional.max ? 'selected' : ''}>${esc(RANGOS.estandar.nombre)}</option>
+            <option value="gestacional" ${estado.diabetes.rango?.max === RANGOS.gestacional.max ? 'selected' : ''}>${esc(RANGOS.gestacional.nombre)}</option>
+          </select></label>
+          <label>Unidad<select name="unidad">
+            ${Object.keys(UNIDADES).map((u) => `<option value="${u}" ${estado.diabetes.unidad === u ? 'selected' : ''}>${u}</option>`).join('')}
+          </select></label>
+        </div>
+        <label class="etiqueta-inline">
+          <input type="checkbox" name="usaInsulina" ${estado.diabetes.usaInsulina ? 'checked' : ''} style="width:auto">
+          Uso insulina (habilita el registro de dosis)</label>
+        <div class="formulario__pie"><button class="boton boton--principal" type="submit">Guardar</button></div>
+      </form>`,
   })}
 
     ${tarjeta({
