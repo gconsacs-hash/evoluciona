@@ -237,6 +237,7 @@ export function progresoInicial() {
     historial: [],
     desbloqueos: [],        // ids de la tienda ya canjeados
     tiersComprados: [],
-    avatar: { skin: 'base', atuendo: 'basico', aura: null, mascota: null },
+    // `rostro` guarda los parámetros de la caricatura, nunca la foto.
+    avatar: { skin: 'base', atuendo: 'basico', aura: null, mascota: null, rostro: null },
   };
 }

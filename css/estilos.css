@@ -517,6 +517,25 @@ input[type='number'] { font-variant-numeric: tabular-nums; }
   background: #000; border-radius: var(--radio-chico); overflow: hidden; margin-bottom: 10px;
 }
 .escaner video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.escaner--rostro { aspect-ratio: 3 / 4; max-height: 280px; }
+.escaner__ovalo {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 52%; height: 62%; border: 2px dashed rgba(255, 255, 255, .75); border-radius: 50%;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, .4);
+}
+
+.estudio-rostro { display: grid; grid-template-columns: 1fr 200px; gap: 16px; align-items: start; }
+.estudio-rostro__previa {
+  background: var(--sup-2); border-radius: var(--radio); padding: 12px; text-align: center;
+}
+.estudio-rostro__cuerpo { display: grid; place-items: center; background: var(--sup-2); border-radius: var(--radio); padding: 10px; }
+.estudio-rostro__cuerpo .avatar-svg { max-width: 150px; }
+.estudio-rostro input[type="color"] { height: 38px; padding: 3px; cursor: pointer; }
+
+@media (max-width: 640px) {
+  .estudio-rostro { grid-template-columns: 1fr; }
+}
+
 .escaner__mira {
   position: absolute; inset: 28% 12%; border: 2px solid var(--acento); border-radius: 8px;
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, .35);

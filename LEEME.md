@@ -153,6 +153,23 @@ No es una decoración: cada parte sale de un dato real.
 | Emblema en el pecho | puntaje de salud financiera sobre 60 |
 | Corona | etapa 9 o superior |
 
+### Tu cara en el avatar
+
+Desde **Perfil → Ponerle mi cara** se toma una foto (cámara o archivo) y el avatar pasa a tener tu
+caricatura: tono de piel, color de pelo, forma de cara y barba salen de la foto, y todo se puede
+ajustar a mano — pelo, barba, forma, lentes y cejas.
+
+**La foto no se guarda.** Se analiza en memoria para extraer media docena de parámetros y se descarta
+al instante. Lo que queda son unos 150 bytes: dos colores y cinco opciones. Nada sale del dispositivo
+y nunca hay una imagen en el almacenamiento.
+
+Una decisión de diseño: no se "cartooniza" la foto con un filtro. Ese camino depende por completo de
+la luz —con luz plana queda una mancha, a contraluz un borrón— y una cara fotográfica sobre un cuerpo
+dibujado se ve mal. En cambio los rasgos se extraen y se **dibuja** una cara en el mismo lenguaje
+gráfico del resto del avatar. Queda reconocible y consistente.
+
+El cuerpo no cambia: sigue reflejando tu entrenamiento, tu nutrición y tu racha.
+
 Hay **10 etapas evolutivas**, una cada 3 niveles aproximadamente: Despertar, Constante, Activo,
 Firme, Atlético, Forjado, Titán, Maestro, Leyenda y Ascendido.
 
@@ -257,7 +274,7 @@ equipo o después de formatear.
 ## Para desarrollar
 
 ```
-npm test        # 308 pruebas del núcleo de cálculo
+npm test        # 330 pruebas del núcleo de cálculo
 npm run servir  # levanta el servidor en el puerto 4173
 ```
 

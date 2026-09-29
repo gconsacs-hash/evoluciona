@@ -4,6 +4,7 @@
 
 import { limitar } from './utiles.js';
 import { etapaDesdeNivel } from './progreso.js';
+import { dibujarRostro, mezclar } from './rostro.js';
 
 export const TONOS_PIEL = {
   claro: { piel: '#f2c8a8', sombra: '#d9a880' },
@@ -40,7 +41,11 @@ export function dibujarAvatar(cfg) {
   const finanzas = limitar(atributos.finanzas || 0, 0, 100);
   const etapa = etapaDesdeNivel(nivel);
 
-  const piel = TONOS_PIEL[tonoPiel] || TONOS_PIEL.medio;
+  /* Si hay caricatura, el cuerpo toma el tono de piel de la foto: una cara con
+     un tono y un cuerpo con otro se ve como un recorte mal pegado. */
+  const piel = avatar.rostro?.piel
+    ? { piel: avatar.rostro.piel, sombra: mezclar(avatar.rostro.piel, -0.22) }
+    : (TONOS_PIEL[tonoPiel] || TONOS_PIEL.medio);
   const ropa = ATUENDOS[avatar.atuendo] || ATUENDOS.basico;
 
   // Geometría derivada de los atributos.
@@ -145,13 +150,25 @@ export function dibujarAvatar(cfg) {
   // --- Cabeza ---
   const rCabeza = 15.5;
   const yCabeza = yHombro - 26;
-  partes.push(`<rect x="${cx - 5}" y="${yCabeza + rCabeza - 4}" width="10" height="14" rx="4" fill="${piel.sombra}"/>`);
-  partes.push(`<circle cx="${cx}" cy="${yCabeza}" r="${rCabeza}" fill="url(#pielGrad)" stroke="${piel.sombra}" stroke-width="1"/>`);
-  partes.push(`<path d="M ${cx - rCabeza} ${yCabeza - 3} Q ${cx} ${yCabeza - rCabeza - 7}, ${cx + rCabeza} ${yCabeza - 3} Q ${cx} ${yCabeza - 9}, ${cx - rCabeza} ${yCabeza - 3} Z" fill="#2c2118"/>`);
-  partes.push(`<circle cx="${cx - 5.5}" cy="${yCabeza + 1}" r="1.7" fill="#2c2118"/>`);
-  partes.push(`<circle cx="${cx + 5.5}" cy="${yCabeza + 1}" r="1.7" fill="#2c2118"/>`);
-  const sonrisa = disciplina >= 50 ? 5 : 2;
-  partes.push(`<path d="M ${cx - 4} ${yCabeza + 7} Q ${cx} ${yCabeza + 7 + sonrisa}, ${cx + 4} ${yCabeza + 7}" fill="none" stroke="#2c2118" stroke-width="1.3" stroke-linecap="round"/>`);
+
+  if (avatar.rostro) {
+    /* Caricatura hecha con los rasgos sacados de una foto. Reemplaza la cabeza
+       genérica, pero el cuerpo sigue siendo el de siempre: lo que cambia por
+       entrenar no se toca. */
+    partes.push(dibujarRostro(
+      avatar.rostro,
+      { cx, cy: yCabeza, r: rCabeza },
+      { sonrisa: limitar(disciplina / 100, 0.15, 1) },
+    ));
+  } else {
+    partes.push(`<rect x="${cx - 5}" y="${yCabeza + rCabeza - 4}" width="10" height="14" rx="4" fill="${piel.sombra}"/>`);
+    partes.push(`<circle cx="${cx}" cy="${yCabeza}" r="${rCabeza}" fill="url(#pielGrad)" stroke="${piel.sombra}" stroke-width="1"/>`);
+    partes.push(`<path d="M ${cx - rCabeza} ${yCabeza - 3} Q ${cx} ${yCabeza - rCabeza - 7}, ${cx + rCabeza} ${yCabeza - 3} Q ${cx} ${yCabeza - 9}, ${cx - rCabeza} ${yCabeza - 3} Z" fill="#2c2118"/>`);
+    partes.push(`<circle cx="${cx - 5.5}" cy="${yCabeza + 1}" r="1.7" fill="#2c2118"/>`);
+    partes.push(`<circle cx="${cx + 5.5}" cy="${yCabeza + 1}" r="1.7" fill="#2c2118"/>`);
+    const sonrisa = disciplina >= 50 ? 5 : 2;
+    partes.push(`<path d="M ${cx - 4} ${yCabeza + 7} Q ${cx} ${yCabeza + 7 + sonrisa}, ${cx + 4} ${yCabeza + 7}" fill="none" stroke="#2c2118" stroke-width="1.3" stroke-linecap="round"/>`);
+  }
 
   // Corona en la etapa máxima
   if (etapa.etapa >= 9) {

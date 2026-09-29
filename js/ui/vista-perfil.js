@@ -7,6 +7,8 @@ import {
 } from '../nucleo/nutricion.js';
 import { EQUIPOS } from '../datos/ejercicios.js';
 import { TONOS_PIEL, dibujarAvatar } from '../nucleo/avatar.js';
+import { dibujarRostro, parametrosPorDefecto, PEINADOS, BARBAS, FORMAS, LENTES } from '../nucleo/rostro.js';
+import { analizarImagen, soportaCamara } from './captura-rostro.js';
 import { atuendosDesbloqueados, aurasDesbloqueadas, temasDesbloqueados, tieneEfecto } from '../nucleo/tienda.js';
 import { exportar, importar, estadoInicial, guardarPerfilDiabetes } from '../nucleo/almacen.js';
 import { TIPOS as TIPOS_DIABETES, RANGOS, UNIDADES } from '../nucleo/diabetes.js';
@@ -74,6 +76,73 @@ export const acciones = {
     }));
     aviso(activo ? 'Sección de diabetes activada. Aparece en el menú.' : 'Sección de diabetes desactivada.', 'bien');
   },
+
+  // --- Caricatura del rostro ---
+  crearRostro(ctx) { abrirEstudioRostro(ctx); },
+
+  async tomarFoto(ctx) {
+    const estado = document.querySelector('[data-estado-rostro]');
+    const video = document.querySelector('[data-video-rostro]');
+    if (!video) return;
+    if (!video.srcObject) { await encenderCamara(ctx); return; }
+    if (estado) estado.textContent = 'Analizando…';
+    const r = await analizarImagen(video, video.videoWidth, video.videoHeight);
+    aplicarBorrador(ctx, r.parametros);
+    if (estado) {
+      estado.textContent = r.detectada
+        ? 'Rostro detectado. Ajusta lo que no calce.'
+        : 'Listo. Tu navegador no detecta rostros, así que usé la zona del óvalo: revisa y ajusta.';
+    }
+  },
+
+  async subirFoto(ctx) {
+    const entrada = document.createElement('input');
+    entrada.type = 'file';
+    entrada.accept = 'image/*';
+    entrada.addEventListener('change', async () => {
+      const archivo = entrada.files?.[0];
+      if (!archivo) return;
+      const url = URL.createObjectURL(archivo);
+      const img = new Image();
+      await new Promise((ok, mal) => { img.onload = ok; img.onerror = mal; img.src = url; });
+      const r = await analizarImagen(img, img.naturalWidth, img.naturalHeight);
+      URL.revokeObjectURL(url);          // la imagen se suelta enseguida
+      aplicarBorrador(ctx, r.parametros);
+      const estado = document.querySelector('[data-estado-rostro]');
+      if (estado) estado.textContent = r.detectada ? 'Rostro detectado en la foto.' : 'Foto analizada. Revisa y ajusta.';
+    });
+    entrada.click();
+  },
+
+  ajustarRostro(ctx, elemento) {
+    if (!borradorRostro) borradorRostro = parametrosPorDefecto();
+    borradorRostro[elemento.name] = elemento.value;
+    pintarPrevia(ctx);
+  },
+
+  guardarRostro(ctx) {
+    if (!borradorRostro) { aviso('Primero toma una foto o ajusta los rasgos.', 'aviso'); return; }
+    const rostro = { ...borradorRostro };
+    ctx.aplicar((estado) => ({
+      ...estado,
+      progreso: { ...estado.progreso, avatar: { ...estado.progreso.avatar, rostro } },
+    }));
+    apagarCamara();
+    cerrarModal();
+    aviso('Caricatura guardada. Tu avatar ahora tiene tu cara.', 'bien', 4500);
+  },
+
+  quitarRostro(ctx) {
+    ctx.aplicar((estado) => ({
+      ...estado,
+      progreso: { ...estado.progreso, avatar: { ...estado.progreso.avatar, rostro: null } },
+    }));
+    apagarCamara();
+    cerrarModal();
+    aviso('Se volvió al avatar genérico.', 'info');
+  },
+
+  cerrarRostro() { apagarCamara(); cerrarModal(); },
 
   exportar(ctx) {
     const texto = exportar(ctx.estado);
@@ -227,6 +296,8 @@ export function html(ctx) {
       <div class="apariencia">
         <div class="apariencia__vista">
           ${dibujarAvatar({ nivel: stats.nivel, atributos: stats.atributos, avatar: estado.progreso.avatar, tonoPiel: p.tonoPiel, racha: stats.racha })}
+          <button class="boton boton--chico boton--principal" data-accion="crearRostro" style="width:100%;margin-top:8px">
+            ${estado.progreso.avatar.rostro ? '✏️ Editar mi caricatura' : '📷 Ponerle mi cara'}</button>
         </div>
         <form class="formulario" data-accion="aplicarApariencia">
           <label>Atuendo<select name="atuendo">
@@ -307,6 +378,134 @@ export function html(ctx) {
       </ul>`,
   })}
   </div>`;
+}
+
+/* ---------- estudio de la caricatura ---------- */
+
+let borradorRostro = null;
+let camaraRostro = null;
+
+function apagarCamara() {
+  camaraRostro?.getTracks().forEach((t) => t.stop());
+  camaraRostro = null;
+}
+
+async function encenderCamara() {
+  const video = document.querySelector('[data-video-rostro]');
+  const estado = document.querySelector('[data-estado-rostro]');
+  if (!video) return;
+  try {
+    camaraRostro = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 640 } }, audio: false,
+    });
+    video.srcObject = camaraRostro;
+    if (estado) estado.textContent = 'Pon tu cara dentro del óvalo, con luz de frente, y toca "Capturar".';
+  } catch (error) {
+    if (estado) {
+      estado.innerHTML = '<span class="marca marca--aviso">! No se pudo abrir la cámara' +
+        (error?.name === 'NotAllowedError' ? ': falta el permiso' : '') + '. Puedes subir una foto.</span>';
+    }
+  }
+}
+
+function aplicarBorrador(ctx, parametros) {
+  borradorRostro = parametros;
+  // Los selectores tienen que reflejar lo que se dedujo de la foto.
+  for (const campo of ['peinado', 'barba', 'forma', 'lentes', 'cejas']) {
+    const sel = document.querySelector(`[name="${campo}"]`);
+    if (sel && parametros[campo]) sel.value = parametros[campo];
+  }
+  for (const campo of ['piel', 'cabello']) {
+    const inp = document.querySelector(`[name="${campo}"]`);
+    if (inp && parametros[campo]) inp.value = parametros[campo];
+  }
+  pintarPrevia(ctx);
+}
+
+function pintarPrevia(ctx) {
+  const caja = document.querySelector('[data-previa-rostro]');
+  if (!caja || !borradorRostro) return;
+  // Se dibuja solo la cabeza, grande, para poder juzgar el parecido.
+  caja.innerHTML = `<svg viewBox="0 0 120 130" class="g-svg g-svg--fijo" style="max-width:190px">
+    ${dibujarRostro(borradorRostro, { cx: 60, cy: 62, r: 34 }, { sonrisa: 0.6 })}
+  </svg>`;
+  const cuerpo = document.querySelector('[data-previa-cuerpo]');
+  if (cuerpo) {
+    cuerpo.innerHTML = dibujarAvatar({
+      nivel: ctx.stats.nivel,
+      atributos: ctx.stats.atributos,
+      avatar: { ...ctx.estado.progreso.avatar, rostro: borradorRostro },
+      tonoPiel: ctx.estado.perfil.tonoPiel,
+      racha: ctx.stats.racha,
+    });
+  }
+}
+
+function abrirEstudioRostro(ctx) {
+  borradorRostro = ctx.estado.progreso.avatar.rostro
+    ? { ...ctx.estado.progreso.avatar.rostro }
+    : parametrosPorDefecto();
+
+  const opciones = (nombre, mapa) => `<label>${
+    { peinado: 'Pelo', barba: 'Barba', forma: 'Forma de cara', lentes: 'Lentes', cejas: 'Cejas' }[nombre]
+  }<select name="${nombre}" data-accion="ajustarRostro">
+      ${Object.entries(mapa).map(([k, v]) => `<option value="${k}" ${borradorRostro[nombre] === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}
+    </select></label>`;
+
+  modal({
+    titulo: 'Tu caricatura',
+    ancho: 760,
+    cuerpo: `
+      <p class="nota nota--info"><span class="nota__icono">i</span><span><strong>La foto no se guarda.</strong>
+        Se analiza aquí mismo para sacar tu tono de piel, color de pelo y forma de cara, y se descarta al instante.
+        Lo único que queda son esos ajustes, que puedes cambiar a mano.</span></p>
+
+      <div class="estudio-rostro">
+        <div class="estudio-rostro__camara">
+          ${soportaCamara()
+      ? `<div class="escaner escaner--rostro"><video data-video-rostro autoplay muted playsinline></video>
+             <div class="escaner__ovalo"></div></div>`
+      : '<p class="tenue">Este navegador no da acceso a la cámara. Puedes subir una foto.</p>'}
+          <p class="tenue" data-estado-rostro>Toca "Encender cámara" o sube una foto que tengas.</p>
+          <div class="botones">
+            ${soportaCamara() ? '<button class="boton boton--principal boton--chico" data-accion="tomarFoto">Capturar</button>' : ''}
+            <button class="boton boton--chico" data-accion="subirFoto">Subir una foto</button>
+          </div>
+        </div>
+
+        <div class="estudio-rostro__previa">
+          <div data-previa-rostro></div>
+          <p class="tenue">Así queda tu cara</p>
+        </div>
+      </div>
+
+      <h3 class="sub">Ajusta lo que no calce</h3>
+      <form class="formulario" onsubmit="return false">
+        <div class="formulario__fila">
+          ${opciones('peinado', PEINADOS)}
+          ${opciones('barba', BARBAS)}
+          ${opciones('forma', FORMAS)}
+        </div>
+        <div class="formulario__fila">
+          ${opciones('lentes', LENTES)}
+          ${opciones('cejas', { normales: 'Normales', gruesas: 'Gruesas', finas: 'Finas' })}
+          <label>Tono de piel<input type="color" name="piel" value="${esc(borradorRostro.piel)}" data-accion="ajustarRostro"></label>
+          <label>Color de pelo<input type="color" name="cabello" value="${esc(borradorRostro.cabello)}" data-accion="ajustarRostro"></label>
+        </div>
+      </form>
+
+      <h3 class="sub">Cómo se verá tu avatar</h3>
+      <div class="estudio-rostro__cuerpo" data-previa-cuerpo></div>
+
+      <div class="formulario__pie">
+        ${ctx.estado.progreso.avatar.rostro ? '<button class="boton boton--peligro" data-accion="quitarRostro">Quitar caricatura</button>' : ''}
+        <button class="boton" data-accion="cerrarRostro">Cancelar</button>
+        <button class="boton boton--principal" data-accion="guardarRostro">Guardar</button>
+      </div>`,
+  });
+
+  pintarPrevia(ctx);
+  if (soportaCamara()) encenderCamara();
 }
 
 /* Veredicto sobre la recomposición. Se muestra completo, con el "no" incluido:
