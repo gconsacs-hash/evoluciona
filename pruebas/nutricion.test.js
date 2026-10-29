@@ -4,8 +4,10 @@ import assert from 'node:assert/strict';
 import {
   calcularTMB, calcularGET, calcularObjetivos, totalizarRegistros, evaluarDia,
   diaEnMeta, sugerirAlimentos, repartirComidas, proyectarPeso, imc, clasificarIMC,
+  distribucionCalorias, resumenPorComida, calidadDelDia, resumenSemanal,
 } from '../js/nucleo/nutricion.js';
-import { MAPA_ALIMENTOS, escalar, buscarAlimentos } from '../js/datos/alimentos.js';
+import { MAPA_ALIMENTOS, ALIMENTOS, CATEGORIAS, escalar, buscarAlimentos } from '../js/datos/alimentos.js';
+import { MICROS_POR_100G } from '../js/datos/micronutrientes.js';
 
 const perfil = { sexo: 'masculino', edad: 30, pesoKg: 80, alturaCm: 175, actividad: 'moderado', objetivo: 'perder', diasEntreno: 4 };
 
@@ -177,6 +179,91 @@ test('todos los alimentos tienen los campos necesarios y valores coherentes', ()
     // Tolerancia amplia: la fibra aporta distinto que los macros puros.
     assert.ok(Math.abs(kcalTeoricas - a.kcal) <= Math.max(45, a.kcal * 0.3), `${id}: ${a.kcal} kcal declaradas vs ${Math.round(kcalTeoricas)} calculadas`);
   }
+});
+
+test('la base tiene más de 180 alimentos sin ids repetidos', () => {
+  assert.ok(ALIMENTOS.length >= 180, `solo ${ALIMENTOS.length}`);
+  assert.equal(new Set(ALIMENTOS.map((a) => a.id)).size, ALIMENTOS.length);
+  for (const a of ALIMENTOS) assert.ok(CATEGORIAS.includes(a.cat), `${a.id} con categoría ${a.cat}`);
+});
+
+test('casi todos los alimentos tienen micronutrientes', () => {
+  const sin = ALIMENTOS.filter((a) => !MICROS_POR_100G[a.id]).map((a) => a.id);
+  assert.deepEqual(sin, []);
+});
+
+test('la búsqueda filtra por categoría', () => {
+  const frutas = buscarAlimentos('', 200, 'Fruta');
+  assert.ok(frutas.length >= 20);
+  assert.ok(frutas.every((a) => a.cat === 'Fruta'));
+  assert.ok(buscarAlimentos('chirimoya', 10, 'Fruta').some((a) => a.id === 'chirimoya'));
+  assert.equal(buscarAlimentos('chirimoya', 10, 'Lácteo').length, 0);
+});
+
+test('las sugerencias nunca proponen condimentos ni ultraprocesados', () => {
+  const objetivos = calcularObjetivos(perfil);
+  const ev = evaluarDia({ kcal: 300, prot: 5, carb: 20, grasa: 5, azucar: 2, sodio: 100, fibra: 1, agua: 0 }, objetivos);
+  for (const s of sugerirAlimentos(ev, 20)) {
+    const a = MAPA_ALIMENTOS.get(s.id);
+    assert.ok(a.cat !== 'Condimento' && !a.up, `${s.nombre} no debería sugerirse`);
+  }
+});
+
+test('la distribución de calorías suma 100% y separa el alcohol', () => {
+  const objetivos = calcularObjetivos(perfil);
+  const d = distribucionCalorias({ kcal: 2000, prot: 150, carb: 200, grasa: 60 }, objetivos);
+  assert.equal(d.actual.prot + d.actual.carb + d.actual.grasa + d.actual.otras, 100);
+  assert.equal(d.actual.prot, 30);
+  const conAlcohol = distribucionCalorias({ kcal: 1000, prot: 25, carb: 100, grasa: 20 }, objetivos);
+  assert.ok(conAlcohol.actual.otras > 20, 'las calorías que no son macros se informan como otras');
+  assert.equal(distribucionCalorias({ kcal: 0, prot: 0, carb: 0, grasa: 0 }, objetivos).actual.prot, 0);
+});
+
+test('el resumen por comida compara contra el reparto y suma lo que no está en él', () => {
+  const objetivos = calcularObjetivos(perfil);
+  const reparto = repartirComidas(objetivos, 4);
+  const registros = [
+    { alimentoId: 'avena', gramos: 100, momento: 'Desayuno' },
+    { alimentoId: 'manzana', gramos: 180, momento: 'Otro' },
+  ];
+  const r = resumenPorComida(registros, reparto);
+  assert.equal(r.length, 5);
+  const desayuno = r.find((c) => c.nombre === 'Desayuno');
+  assert.equal(desayuno.kcal, 389);
+  assert.equal(desayuno.pct, Math.round((389 / reparto[0].kcal) * 100));
+  assert.equal(r.find((c) => c.nombre === 'Otro').pct, null);
+  assert.equal(r.find((c) => c.nombre === 'Cena').registros, 0);
+});
+
+test('la calidad del día premia frutas, verduras y variedad, y castiga ultraprocesados', () => {
+  const objetivos = calcularObjetivos(perfil);
+  const evaluar = (registros) => evaluarDia(totalizarRegistros(registros), objetivos);
+  const bueno = [
+    ['avena', 80], ['leche_semi', 250], ['platano', 120], ['pollo_pechuga', 200], ['arroz_integral', 200],
+    ['brocoli', 150], ['tomate', 130], ['lechuga', 80], ['lentejas', 250], ['manzana', 180], ['yogur_natural', 170],
+    ['zanahoria', 100], ['huevo', 110], ['aceite_oliva', 10],
+  ].map(([alimentoId, gramos]) => ({ alimentoId, gramos, momento: 'x' }));
+  const malo = [['completo', 400], ['bebida_azucarada', 700], ['papas_fritas_bolsa', 120], ['alfajor', 100]]
+    .map(([alimentoId, gramos]) => ({ alimentoId, gramos, momento: 'x' }));
+  const cb = calidadDelDia(bueno, evaluar(bueno));
+  const cm = calidadDelDia(malo, evaluar(malo));
+  assert.ok(cb.puntaje >= 75, `día bueno: ${cb.puntaje}`);
+  assert.ok(cm.puntaje <= 35, `día malo: ${cm.puntaje}`);
+  assert.ok(cb.porcionesFV >= 5);
+  assert.ok(cm.pctUP >= 90);
+  assert.equal(cb.componentes.length, 6);
+  assert.equal(calidadDelDia([], evaluar([])).vacio, true);
+});
+
+test('el resumen semanal promedia los días con registro', () => {
+  const r = resumenSemanal([
+    { total: { kcal: 2000, prot: 100, fibra: 20 }, enMeta: true },
+    { total: { kcal: 2400, prot: 140, fibra: 30 }, enMeta: false },
+  ]);
+  assert.equal(r.kcal, 2200);
+  assert.equal(r.prot, 120);
+  assert.equal(r.enMeta, 1);
+  assert.equal(resumenSemanal([]), null);
 });
 
 test('escalar es proporcional a los gramos', () => {

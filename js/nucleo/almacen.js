@@ -44,12 +44,14 @@ export function estadoInicial() {
     comidas: {},                 // { fecha: [ {id, alimentoId, gramos, momento} ] }
     productos: {},               // { codigoDeBarras: producto } — despensa escaneada
     aguaExtra: {},               // { fecha: ml }
+    precios: {},                 // { alimentoId: pesos por kg } — reemplaza el precio de referencia
     pesos: [],                   // [ {fecha, peso} ]
     diabetes: perfilDiabetesInicial(),
     glicemias: [],               // [ {id, fecha, hora, valor, momento, nota} ]
     insulina: [],                // [ {id, fecha, hora, tipo, unidades, nota} ]
     entrenamientos: [],          // [ {id, fecha, semana, nombre, tier, duracionMin, ejercicios} ]
     planSemanal: null,           // { semana, sesiones }
+    programa: null,              // { id, inicio } — programa de entrenamiento elegido; null = plan automático
     movimientos: [],             // [ {id, fecha, tipo, categoria, monto, nota} ]
     presupuesto: {},
     metas: [],                   // [ {id, nombre, montoObjetivo, montoActual, aporteMensual, fechaLimite} ]
@@ -115,7 +117,7 @@ export function migrar(datos) {
     if (!Array.isArray(estado[campo])) estado[campo] = [];
   }
   if (!Array.isArray(estado.habitos) || !estado.habitos.length) estado.habitos = habitosIniciales();
-  for (const campo of ['registrosHabitos', 'comidas', 'aguaExtra', 'presupuesto', 'productos']) {
+  for (const campo of ['registrosHabitos', 'comidas', 'aguaExtra', 'presupuesto', 'productos', 'precios']) {
     if (!estado[campo] || typeof estado[campo] !== 'object') estado[campo] = {};
   }
   // Los productos escaneados vuelven al catálogo para poder buscarlos y sumarlos.
@@ -463,6 +465,7 @@ export function guardarEntrenamiento(estado, sesion) {
     nombre: sesion.nombre || 'Entrenamiento',
     tier: sesion.tier || 1,
     duracionMin: Number(sesion.duracionMin) || 0,
+    ...(sesion.programaId ? { programaId: sesion.programaId } : {}),
     ejercicios: (sesion.ejercicios || []).map((e) => ({
       ejercicioId: e.ejercicioId,
       patron: e.patron,

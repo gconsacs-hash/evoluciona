@@ -4,11 +4,18 @@ import {
   tarjeta, estadistica, barraMacro, anillo, listaNotas, lineaTiempo,
   aviso, esc, vacio, modal, cerrarModal,
 } from './comun.js';
-import { buscarAlimentos, MAPA_ALIMENTOS, escalar } from '../datos/alimentos.js';
+import { buscarAlimentos, MAPA_ALIMENTOS, escalar, CATEGORIAS } from '../datos/alimentos.js';
 import { PLATOS, CATEGORIAS_PLATOS } from '../datos/platos.js';
-import { buscarProducto, productoManual, soportaEscaneo, codigoValido, normalizarCodigo, FORMATOS } from '../nucleo/productos.js';
+import {
+  buscarProducto, productoManual, soportaEscaneo, codigoValido, normalizarCodigo, FORMATOS,
+  sellosAltoEn, densidadProteica, conPrecio, precioPor100,
+} from '../nucleo/productos.js';
 import { evaluarMicros, leerMicros, sugerirParaMicro } from '../nucleo/micronutrientes.js';
-import { orientacionDelDia, repartirComidas, proyectarPeso, OBJETIVOS, imc, clasificarIMC } from '../nucleo/nutricion.js';
+import {
+  orientacionDelDia, repartirComidas, proyectarPeso, OBJETIVOS, imc, clasificarIMC,
+  distribucionCalorias, calidadDelDia, resumenPorComida, resumenSemanal,
+} from '../nucleo/nutricion.js';
+import { DIETAS_ECONOMICAS, analizarDieta, proteinaMasBarata, tablaPrecios } from '../nucleo/presupuesto.js';
 import {
   diaNutricion, agregarComida, quitarComida, sumarAgua, registrarPeso,
   guardarProducto, borrarProducto,
@@ -22,6 +29,11 @@ let busqueda = '';
 let momentoActual = 'Desayuno';
 let categoriaPlatos = CATEGORIAS_PLATOS[0];
 let camara = null;          // { stream, video, detector, timer } mientras el escáner está abierto
+let categoriaBusqueda = '';
+let dietaActual = DIETAS_ECONOMICAS[0].id;
+let modoSupermercado = false;
+let comparados = [];        // productos escaneados en esta visita al supermercado
+let ultimoLeido = '';       // evita leer diez veces el mismo código mientras sigue frente a la cámara
 
 export const acciones = {
   buscar(ctx, elemento) {
@@ -138,6 +150,7 @@ export const acciones = {
     if (!Number(d.kcal)) { aviso('Las calorías por 100 g son obligatorias: están en la tabla del envase.', 'aviso'); return; }
     const producto = productoManual(d);
     ctx.aplicar((estado) => guardarProducto(estado, producto));
+    if (modoSupermercado && !comparados.some((x) => x.id === producto.id)) comparados = [...comparados, producto];
     cerrarModal();
     aviso(`"${producto.nombre}" guardado en tu despensa. La próxima vez lo encuentras al tiro.`, 'bien', 4500);
   },
@@ -185,8 +198,166 @@ export const acciones = {
     });
   },
 
+  // --- Búsqueda por categoría ---
+  filtrarCategoria(ctx, elemento) {
+    categoriaBusqueda = elemento.dataset.cat || '';
+    document.querySelectorAll('[data-accion="filtrarCategoria"]').forEach((b) => {
+      b.classList.toggle('chip--activo', (b.dataset.cat || '') === categoriaBusqueda);
+    });
+    const contenedor = document.querySelector('[data-resultados]');
+    if (contenedor) contenedor.innerHTML = resultadosBusqueda(ctx);
+  },
+
+  // --- Dietas económicas ---
+  verDietas(ctx) { abrirDietas(ctx); },
+  elegirDieta(ctx, elemento) {
+    dietaActual = elemento.dataset.id;
+    abrirDietas(ctx);
+  },
+  registrarDieta(ctx) {
+    const dieta = DIETAS_ECONOMICAS.find((d) => d.id === dietaActual);
+    if (!dieta) return;
+    const a = analizarDieta(dieta, { perfil: ctx.estado.perfil, objetivos: diaNutricion(ctx.estado).objetivos, precios: ctx.estado.precios });
+    if (!confirm(`¿Registrar los ${a.items.length} alimentos de "${dieta.nombre}" como lo que comiste el ${fechaVista === hoyISO() ? 'día de hoy' : fechaVista}?`)) return;
+    ctx.aplicar((estado) => a.items.reduce((e, i) => agregarComida(e, i, fechaVista), estado));
+    cerrarModal();
+    aviso(`"${dieta.nombre}" registrada. Puedes quitar o cambiar lo que no hayas comido.`, 'bien', 4500);
+  },
+  verProteinaBarata(ctx) {
+    const lista = proteinaMasBarata(ctx.estado.precios, 14);
+    modal({
+      titulo: 'Proteína más barata',
+      ancho: 640,
+      cuerpo: `
+        <p class="tenue">Cuánto cuesta juntar <strong>30 g de proteína</strong> (una comida que sí repara músculo) con cada alimento.</p>
+        <table class="tabla">
+          <thead><tr><th>Alimento</th><th>Cantidad</th><th>Calorías</th><th>Costo</th></tr></thead>
+          <tbody>${lista.map((p) => `<tr><td>${esc(p.nombre)}</td><td>${num(p.gramos)} g</td>
+            <td class="tenue">${num(p.kcal)} kcal</td><td><strong>$${num(p.costo)}</strong></td></tr>`).join('')}</tbody>
+        </table>
+        <p class="tenue g-nota">Las legumbres salen baratas pero traen más calorías por gramo de proteína;
+          con huevo, jurel o yogur pagas un poco más y comes menos calorías. Los productos escaneados con precio también entran aquí.</p>
+        <div class="botones"><button class="boton" data-accion="editarPrecios">Corregir precios</button></div>`,
+    });
+  },
+  editarPrecios(ctx) { abrirPrecios(ctx); },
+  guardarPrecios(ctx, formulario, evento) {
+    evento.preventDefault();
+    const nuevos = {};
+    for (const [id, valor] of new FormData(formulario)) {
+      const v = Number(valor);
+      if (v > 0) nuevos[id] = Math.round(v);
+    }
+    ctx.aplicar((estado) => ({ ...estado, precios: nuevos }));
+    cerrarModal();
+    aviso(`${Object.keys(nuevos).length} precio${Object.keys(nuevos).length === 1 ? '' : 's'} propio${Object.keys(nuevos).length === 1 ? '' : 's'} guardado${Object.keys(nuevos).length === 1 ? '' : 's'}. Las cuentas ya los usan.`, 'bien');
+  },
+  restaurarPrecios(ctx) {
+    if (!confirm('¿Volver a los precios de referencia? Se borran los que anotaste.')) return;
+    ctx.aplicar((estado) => ({ ...estado, precios: {} }));
+    abrirPrecios(ctx);
+  },
+
+  // --- Modo supermercado ---
+  modoSuper(ctx, elemento) {
+    modoSupermercado = !!elemento.checked;
+    pintarComparados();
+  },
+  guardarPrecioProducto(ctx, formulario, evento) {
+    evento.preventDefault();
+    const d = new FormData(formulario);
+    const producto = MAPA_ALIMENTOS.get(d.get('id'));
+    if (!producto) return;
+    const actualizado = conPrecio(producto, d.get('precio'), d.get('envase'));
+    ctx.aplicar((estado) => guardarProducto(estado, actualizado));
+    comparados = comparados.map((p) => (p.id === actualizado.id ? actualizado : p));
+    pintarComparados();
+    aviso(precioPor100(actualizado) ? `Precio guardado: $${num(precioPor100(actualizado))} por 100 g.` : 'Precio guardado.', 'bien');
+  },
+  limpiarComparados() { comparados = []; pintarComparados(); },
+
   cerrar() { cerrarModal(); detenerCamara(); },
 };
+
+/* ---------- comer con poco presupuesto ---------- */
+
+function abrirDietas(ctx) {
+  const objetivos = diaNutricion(ctx.estado).objetivos;
+  const dieta = DIETAS_ECONOMICAS.find((d) => d.id === dietaActual) || DIETAS_ECONOMICAS[0];
+  const a = analizarDieta(dieta, { perfil: ctx.estado.perfil, objetivos, precios: ctx.estado.precios });
+  const porMomento = new Map();
+  for (const i of a.costo.detalle) porMomento.set(i.momento, [...(porMomento.get(i.momento) || []), i]);
+  const t = a.aporte.total;
+
+  modal({
+    titulo: 'Comer bien con poco presupuesto',
+    ancho: 860,
+    cuerpo: `
+      <div class="filtros">${DIETAS_ECONOMICAS.map((d) => `<button class="chip ${d.id === dieta.id ? 'chip--activo' : ''}"
+        data-accion="elegirDieta" data-id="${esc(d.id)}">${esc(d.nombre)}</button>`).join('')}</div>
+      <p class="tenue">${esc(dieta.descripcion)} Ajustada a tus ${num(objetivos.kcal)} kcal
+        (cantidades × ${String(a.factor).replace('.', ',')}; verduras y agua no se escalan).</p>
+
+      <div class="rejilla rejilla--4">
+        ${estadistica({ valor: `$${num(a.costo.total)}`, etiqueta: 'Costo del día', detalle: `$${num(a.costoMensual)} al mes`, tono: 'bien' })}
+        ${estadistica({ valor: num(t.kcal), etiqueta: 'Calorías', detalle: `${Math.round((t.kcal / objetivos.kcal) * 100)}% de tu meta` })}
+        ${estadistica({ valor: `${num(t.prot)} g`, etiqueta: 'Proteína', detalle: `${String(a.aporte.protKg).replace('.', ',')} g por kilo`, tono: a.aporte.protKg >= 1.6 ? 'bien' : 'aviso' })}
+        ${estadistica({ valor: a.costoPor30gProt ? `$${num(a.costoPor30gProt)}` : '—', etiqueta: 'Cada 30 g de proteína', detalle: `${num(t.carb)} g carbos · ${num(t.grasa)} g grasas` })}
+      </div>
+
+      <h3 class="sub">Qué le aporta a tu entrenamiento</h3>
+      ${listaNotas(a.aporte.lineas)}
+
+      <h3 class="sub">El día completo</h3>
+      <div class="menu">${[...porMomento.entries()].map(([momento, lista]) => `
+        <div class="menu__comida">
+          <strong>${esc(momento)}</strong>
+          <span class="tenue">${num(lista.reduce((s, i) => s + escalar(MAPA_ALIMENTOS.get(i.alimentoId), i.gramos).kcal, 0))} kcal ·
+            $${num(lista.reduce((s, i) => s + (i.costo || 0), 0))}</span>
+          <ul>${lista.map((i) => {
+    const al = MAPA_ALIMENTOS.get(i.alimentoId);
+    const liquido = al?.cat === 'Bebida' || /^(leche|bebida)_/.test(i.alimentoId);
+    const cantidad = i.alimentoId === 'huevo' ? `${Math.round(i.gramos / 55)} ${Math.round(i.gramos / 55) === 1 ? 'huevo' : 'huevos'} (${num(i.gramos)} g)` : `${num(i.gramos)} ${liquido ? 'ml' : 'g'}`;
+    return `<li>${esc(al?.nombre || i.alimentoId)} — ${cantidad} <span class="tenue">${i.costo === null ? 'sin precio' : `$${num(i.costo)}`}</span></li>`;
+  }).join('')}</ul>
+        </div>`).join('')}</div>
+      ${a.costo.sinPrecio.length ? `<p class="tenue">Sin precio (no sumados al costo): ${esc(a.costo.sinPrecio.map((id) => MAPA_ALIMENTOS.get(id)?.nombre || id).join(', '))}.</p>` : ''}
+
+      <div class="botones">
+        <button class="boton boton--principal" data-accion="registrarDieta">Registrar como mi día${fechaVista === hoyISO() ? ' de hoy' : ''}</button>
+        <button class="boton" data-accion="verProteinaBarata">Proteína más barata</button>
+        <button class="boton" data-accion="editarPrecios">Corregir precios</button>
+      </div>
+      <p class="tenue g-nota">Los precios son referenciales de supermercado en Chile (octubre 2026) y cambian con la ciudad y la oferta:
+        anota los que tú pagas y la cuenta pasa a ser la tuya. Los granos se compran crudos y se registran cocidos;
+        el costo ya considera cuánto rinden al cocinarse.</p>`,
+  });
+}
+
+function abrirPrecios(ctx) {
+  const filas = tablaPrecios(ctx.estado.precios);
+  modal({
+    titulo: 'Precios que pagas',
+    ancho: 720,
+    cuerpo: `
+      <p class="tenue">Precio por <strong>kilo o litro</strong>, tal como lo compras. Deja vacío para usar la referencia.</p>
+      <form class="formulario" data-accion="guardarPrecios">
+        <table class="tabla">
+          <thead><tr><th>Alimento</th><th>Cómo se compra</th><th>Referencia</th><th>Tu precio</th></tr></thead>
+          <tbody>${filas.map((p) => `<tr>
+            <td>${esc(p.nombre)}</td>
+            <td class="tenue">${esc(p.compra)}</td>
+            <td class="tenue">$${num(p.referencia)}</td>
+            <td><input type="number" name="${esc(p.id)}" min="0" step="10" value="${p.propio || ''}" placeholder="${p.referencia}" aria-label="Precio por kilo de ${esc(p.nombre)}"></td>
+          </tr>`).join('')}</tbody>
+        </table>
+        <div class="formulario__pie">
+          <button class="boton" type="button" data-accion="restaurarPrecios">Volver a la referencia</button>
+          <button class="boton boton--principal" type="submit">Guardar precios</button>
+        </div>
+      </form>`,
+  });
+}
 
 /* ---------- platos preparados ---------- */
 
@@ -235,6 +406,7 @@ function detenerCamara() {
 
 function abrirEscaner(ctx) {
   const puede = soportaEscaneo();
+  ultimoLeido = '';
   modal({
     titulo: 'Escanear producto',
     ancho: 560,
@@ -249,13 +421,59 @@ function abrirEscaner(ctx) {
         <label>Código de barras<input name="codigo" inputmode="numeric" placeholder="7801234567894" autocomplete="off"></label>
         <button class="boton boton--principal" type="submit">Buscar</button>
       </form>
+      <label class="interruptor"><input type="checkbox" data-accion="modoSuper" ${modoSupermercado ? 'checked' : ''}>
+        <span><strong>Modo supermercado:</strong> la cámara sigue leyendo y arma una tabla para comparar productos en la góndola</span></label>
       <div data-resultado-escaner></div>
+      <div data-comparados>${vistaComparados()}</div>
       <p class="tenue g-nota">Buscar un producto nuevo necesita internet una sola vez: los datos vienen de Open Food Facts,
-        una base abierta. Después queda guardado en tu dispositivo y funciona sin conexión.
-        Si no aparece, lo cargas a mano una vez copiando la tabla del envase.</p>`,
+        una base abierta donde no todos los productos chilenos están cargados. Después queda guardado en tu dispositivo
+        y funciona sin conexión. Si no aparece, lo cargas a mano una vez copiando la tabla del envase.</p>`,
   });
 
   if (puede) iniciarCamara(ctx);
+}
+
+/* ---------- comparación en la góndola ---------- */
+
+function pintarComparados() {
+  const caja = document.querySelector('[data-comparados]');
+  if (caja) caja.innerHTML = vistaComparados();
+}
+
+function vistaComparados() {
+  if (!comparados.length) {
+    return modoSupermercado
+      ? '<p class="tenue">Escanea dos o más productos parecidos (por ejemplo, tres yogures) y aquí aparecen lado a lado.</p>'
+      : '';
+  }
+  const mejorProt = Math.max(...comparados.map(densidadProteica));
+  return `<h3 class="sub">Comparación (${comparados.length})</h3>
+    <div class="tabla-desliza"><table class="tabla">
+      <thead><tr><th>Producto</th><th>kcal/100</th><th>Proteína por 100 kcal</th><th>Azúcar</th><th>Sodio</th><th>Sellos según la tabla</th><th>$/100 g</th></tr></thead>
+      <tbody>${comparados.map((p) => {
+    const sellos = sellosAltoEn(p);
+    const precio = precioPor100(p);
+    return `<tr>
+          <td>${esc(p.nombre)}</td>
+          <td>${num(p.kcal)}</td>
+          <td>${densidadProteica(p) === mejorProt && mejorProt > 0 ? `<strong>${num(densidadProteica(p), 1)} g ✓</strong>` : `${num(densidadProteica(p), 1)} g`}</td>
+          <td>${num(p.azucar, 1)} g</td>
+          <td>${num(p.sodio)} mg</td>
+          <td>${sellos.length ? sellos.map((s) => `<span class="sello">ALTO EN ${esc(s.toUpperCase())}</span>`).join(' ') : '<span class="marca marca--bien">✓ ninguno</span>'}</td>
+          <td>${precio ? `$${num(precio)}` : '<span class="tenue">—</span>'}</td>
+        </tr>`;
+  }).join('')}</tbody>
+    </table></div>
+    <div class="botones"><button class="boton boton--chico" data-accion="limpiarComparados">Vaciar comparación</button></div>`;
+}
+
+function formularioPrecio(p) {
+  return `<form class="formulario formulario--linea" data-accion="guardarPrecioProducto">
+    <input type="hidden" name="id" value="${esc(p.id)}">
+    <label>¿Cuánto costó? ($)<input type="number" name="precio" min="0" step="10" value="${p.precioEnvase || ''}" placeholder="1290"></label>
+    <label>Contenido del envase (g o ml)<input type="number" name="envase" min="0" step="1" value="${p.gramosEnvase || ''}" placeholder="500"></label>
+    <button class="boton boton--chico" type="submit">Guardar precio</button>
+  </form>`;
 }
 
 async function iniciarCamara(ctx) {
@@ -276,6 +494,15 @@ async function iniciarCamara(ctx) {
         const codigos = await detector.detect(video);
         const leido = codigos.find((c) => codigoValido(c.rawValue));
         if (!leido) return;
+        if (modoSupermercado) {
+          // En la góndola la cámara sigue abierta: solo se ignora el código que ya se leyó.
+          if (leido.rawValue === ultimoLeido) return;
+          ultimoLeido = leido.rawValue;
+          try { navigator.vibrate?.(80); } catch { /* sin vibración, da igual */ }
+          if (estado) estado.textContent = `Código leído: ${leido.rawValue}. Apunta al siguiente producto.`;
+          await resolverCodigo(ctx, leido.rawValue);
+          return;
+        }
         detenerCamara();
         if (estado) estado.textContent = `Código leído: ${leido.rawValue}`;
         await resolverCodigo(ctx, leido.rawValue);
@@ -306,20 +533,29 @@ async function resolverCodigo(ctx, codigo) {
 
   const p = r.producto;
   if (r.origen === 'internet') ctx.aplicar((estado) => guardarProducto(estado, p));
+  if (modoSupermercado && !comparados.some((x) => x.id === p.id)) {
+    comparados = [...comparados, p];
+    pintarComparados();
+  }
   const n = escalar(p, p.porcion);
+  const sellos = sellosAltoEn(p);
   if (caja) {
     caja.innerHTML = `
       <article class="alimento">
         <div class="alimento__info">
           <strong>${esc(p.nombre)}</strong>
           <span class="tenue">${r.origen === 'guardado' ? 'ya estaba en tu despensa' : 'nuevo, guardado en tu despensa'} ·
-            ${p.envase ? esc(p.envase) + ' · ' : ''}por 100 g: ${num(p.kcal)} kcal</span>
+            ${p.envase ? esc(p.envase) + ' · ' : ''}por 100 g: ${num(p.kcal)} kcal · ${num(densidadProteica(p), 1)} g de proteína por cada 100 kcal</span>
           <span class="tenue">Porción de ${num(p.porcion)} g: <strong>${num(n.kcal)} kcal</strong> ·
             P ${num(n.prot, 1)} C ${num(n.carb, 1)} G ${num(n.grasa, 1)} · azúcar ${num(n.azucar, 1)} g · sodio ${num(n.sodio)} mg</span>
+          <span>${sellos.length
+    ? sellos.map((s) => `<span class="sello">ALTO EN ${esc(s.toUpperCase())}</span>`).join(' ') + ' <span class="tenue">según su tabla</span>'
+    : '<span class="marca marca--bien">✓ Su tabla no supera ningún límite de sello</span>'}</span>
         </div>
         <input type="number" value="${p.porcion}" min="1" step="5" data-gramos="${esc(p.id)}" aria-label="Gramos">
         <button class="boton boton--chico boton--principal" data-accion="agregarProducto" data-id="${esc(p.id)}">Agregar a ${esc(momentoActual)}</button>
-      </article>`;
+      </article>
+      ${formularioPrecio(p)}`;
   }
 }
 
@@ -346,8 +582,16 @@ function formularioManual(ctx, codigo) {
           <label>Azúcares (g)<input type="number" name="azucar" min="0" step="0.1" value="0"></label>
           <label>Fibra (g)<input type="number" name="fibra" min="0" step="0.1" value="0"></label>
         </div>
-        <label>Sodio (mg por 100 g)<input type="number" name="sodio" min="0" step="1" value="0"></label>
+        <div class="formulario__fila">
+          <label>Sodio (mg por 100 g)<input type="number" name="sodio" min="0" step="1" value="0"></label>
+          <label>Grasas saturadas (g)<input type="number" name="grasaSat" min="0" step="0.1" value="0"></label>
+        </div>
         <p class="tenue">Si el envase trae la sal en gramos en vez del sodio, multiplícala por 400 para obtener los miligramos de sodio.</p>
+        <div class="formulario__fila">
+          <label>Contenido del envase (g o ml, opcional)<input type="number" name="envase" min="0" step="1"></label>
+          <label>Precio pagado ($, opcional)<input type="number" name="precio" min="0" step="10"></label>
+        </div>
+        <label class="interruptor"><input type="checkbox" name="liquido" value="si"><span>Es un líquido (los sellos usan otros límites)</span></label>
         <div class="formulario__pie"><button class="boton boton--principal" type="submit">Guardar en mi despensa</button></div>
       </form>`,
   });
@@ -366,7 +610,7 @@ function abrirDespensa(ctx) {
              <div class="habito__info">
                <strong>${esc(p.nombre)}</strong>
                <span class="tenue">${p.codigo ? 'código ' + esc(p.codigo) + ' · ' : ''}${num(p.kcal)} kcal/100 g ·
-                 porción ${num(p.porcion)} g${p.manual ? ' · cargado a mano' : ''}</span>
+                 porción ${num(p.porcion)} g${p.manual ? ' · cargado a mano' : ''}${precioPor100(p) ? ` · $${num(precioPor100(p))} por 100 g` : ''}</span>
              </div>
              <button class="boton boton--chico boton--peligro" data-accion="borrarProducto" data-clave="${esc(clave)}">Quitar</button>
            </li>`).join('')}
@@ -388,6 +632,11 @@ export function html(ctx) {
   const claseIMC = clasificarIMC(indiceMasa);
   const proyeccion = proyectarPeso(stats.nutricion.kcalRecientes, dia.objetivos, estado.perfil.pesoKg, estado.perfil.objetivo);
   const cinturas = estado.pesos.filter((p) => p.cintura > 0).slice(-30);
+  const calidad = calidadDelDia(dia.registros, ev);
+  const porComida = resumenPorComida(dia.registros, reparto);
+  const semana = resumenSemanal(Array.from({ length: 7 }, (_, i) => sumarDias(fechaVista, -i))
+    .filter((f) => (estado.comidas[f] || []).length)
+    .map((f) => diaNutricion(estado, f)));
 
   const porMomento = new Map();
   for (const r of dia.registros) {
@@ -410,9 +659,11 @@ export function html(ctx) {
       </div>
     </header>
 
-    <div class="rejilla rejilla--2">
-      ${tarjeta({
-    titulo: 'Balance del día',
+    ${tarjeta({
+    titulo: 'Cuadro nutricional del día',
+    extra: `<span class="ficha ${ev.kcal.falta > 0 ? '' : 'ficha--aviso'}">${ev.kcal.falta > 0
+      ? `quedan ${num(ev.kcal.falta)} kcal`
+      : `${num(dia.total.kcal - dia.objetivos.kcal)} kcal sobre la meta`}</span>`,
     cuerpo: `
       <div class="dia-vistazo">
         ${anillo({
@@ -427,11 +678,24 @@ export function html(ctx) {
           ${barraMacro(ev.grasa)}
         </div>
       </div>
-      <div class="macros macros--fila">
-        ${barraMacro(ev.fibra)}
-        ${barraMacro(ev.azucar)}
-        ${barraMacro(ev.sodio)}
-      </div>`,
+      ${repartoCalorias(distribucionCalorias(dia.total, dia.objetivos), dia.total.kcal > 0)}
+      ${tablaNutricional(ev, dia.total)}`,
+  })}
+
+    <div class="rejilla rejilla--2">
+      ${tarjeta({
+    titulo: 'Calidad del día',
+    extra: calidad.vacio ? '' : `<span class="ficha">${calidad.puntaje}/100</span>`,
+    cuerpo: calidad.vacio
+      ? vacio('Registra tus comidas y aquí ves no cuánto comiste, sino qué tan bien.')
+      : `<ul class="calidad">${calidad.componentes.map((c) => `
+          <li>
+            <div class="calidad__fila"><span class="marca marca--${c.tono}">${c.tono === 'bien' ? '✓' : c.tono === 'aviso' ? '!' : '✕'}</span>
+              <strong>${esc(c.nombre)}</strong><span class="tenue">${c.valor}</span></div>
+            <div class="macro__pista"><div class="macro__relleno macro__relleno--${c.tono}" style="width:${c.valor}%"></div></div>
+            <span class="tenue">${esc(c.texto)}</span>
+          </li>`).join('')}</ul>
+        <p class="tenue g-nota">El puntaje es el promedio de los seis. No premia comer poco: un día con todas las calorías puede sacar 100.</p>`,
   })}
       ${tarjeta({
     titulo: 'Hidratación',
@@ -484,7 +748,11 @@ export function html(ctx) {
       ? `<button class="boton boton--chico" data-accion="verDespensa">Mi despensa (${Object.keys(estado.productos).length})</button>`
       : ''}
       </div>
-      <input class="buscador" type="search" placeholder="Buscar alimento o plato: pollo, sushi, pizza, palta…" value="${esc(busqueda)}" data-accion="buscar" aria-label="Buscar alimento">
+      <input class="buscador" type="search" placeholder="Buscar entre ${MAPA_ALIMENTOS.size} alimentos y platos: pollo, sushi, chirimoya, kéfir…" value="${esc(busqueda)}" data-accion="buscar" aria-label="Buscar alimento">
+      <div class="filtros filtros--compactos">
+        ${['', ...CATEGORIAS, ...(Object.keys(estado.productos).length ? ['Escaneado'] : [])].map((c) => `<button class="chip ${c === categoriaBusqueda ? 'chip--activo' : ''}"
+          data-accion="filtrarCategoria" data-cat="${esc(c)}">${esc(c || 'Todos')}</button>`).join('')}
+      </div>
       <div data-resultados>${resultadosBusqueda(ctx)}</div>`,
   })}
 
@@ -514,12 +782,37 @@ export function html(ctx) {
   })}
 
     ${tarjeta({
-    titulo: 'Reparto sugerido de comidas',
+    titulo: 'Comer bien con poco presupuesto',
+    cuerpo: `
+      <p>Días completos con avena, leche, huevo duro, legumbres, arroz y ensaladas: cuánto cuestan,
+        cuánta proteína y energía dan, y qué le aportan a tu entrenamiento. Ajustados a tus calorías.</p>
+      <div class="dietas">${DIETAS_ECONOMICAS.map((d) => {
+    const a = analizarDieta(d, { perfil: estado.perfil, objetivos: dia.objetivos, precios: estado.precios });
+    return `<button class="dieta" data-accion="elegirDieta" data-id="${esc(d.id)}">
+          <strong>${esc(d.nombre)}</strong>
+          <span class="dieta__costo">$${num(a.costo.total)} <span class="tenue">al día</span></span>
+          <span class="tenue">${num(a.aporte.total.kcal)} kcal · ${num(a.aporte.total.prot)} g proteína · $${num(a.costoMensual)} al mes</span>
+        </button>`;
+  }).join('')}</div>
+      <div class="botones">
+        <button class="boton" data-accion="verProteinaBarata">Proteína más barata</button>
+        <button class="boton boton--chico" data-accion="editarPrecios">Corregir precios${Object.keys(estado.precios || {}).length ? ` (${Object.keys(estado.precios).length} propios)` : ''}</button>
+      </div>`,
+  })}
+
+    ${tarjeta({
+    titulo: 'Cómo vas en cada comida',
     cuerpo: `<table class="tabla">
-        <thead><tr><th>Comida</th><th>Calorías</th><th>Proteína</th><th>Carbos</th><th>Grasas</th></tr></thead>
-        <tbody>${reparto.map((c) => `<tr><td>${esc(c.nombre)}</td><td>${num(c.kcal)} kcal</td><td>${num(c.prot)} g</td><td>${num(c.carb)} g</td><td>${num(c.grasa)} g</td></tr>`).join('')}</tbody>
+        <thead><tr><th>Comida</th><th>Meta</th><th>Llevas</th><th>Avance</th><th>Proteína</th></tr></thead>
+        <tbody>${porComida.map((c) => `<tr>
+          <td>${esc(c.nombre)}</td>
+          <td class="tenue">${c.meta ? `${num(c.meta.kcal)} kcal` : '—'}</td>
+          <td>${c.registros ? `<strong>${num(c.kcal)} kcal</strong>` : '<span class="tenue">nada aún</span>'}</td>
+          <td>${c.pct === null ? '—' : `<span class="marca marca--${c.pct > 125 ? 'mal' : c.pct >= 75 ? 'bien' : 'aviso'}">${c.pct}%</span>`}</td>
+          <td>${num(c.prot, 1)}${c.meta ? ` <span class="tenue">/ ${num(c.meta.prot)} g</span>` : ' g'}</td>
+        </tr>`).join('')}</tbody>
       </table>
-      <p class="tenue g-nota">Puedes cambiar el número de comidas al día desde tu perfil.</p>`,
+      <p class="tenue g-nota">La meta de cada comida sale de repartir tus objetivos del día. Puedes cambiar el número de comidas desde tu perfil.</p>`,
   })}
 
     <div class="rejilla rejilla--2">
@@ -562,7 +855,7 @@ export function html(ctx) {
   })}
       ${tarjeta({
     titulo: 'Calorías de los últimos 14 días',
-    cuerpo: stats.nutricion.kcalRecientes.length >= 2
+    cuerpo: (stats.nutricion.kcalRecientes.length >= 2
       ? lineaTiempo({
         puntos: Object.keys(estado.comidas).filter((f) => (estado.comidas[f] || []).length).sort().slice(-14)
           .map((f) => ({ etiqueta: f.slice(5), valor: Math.round(diaNutricion(estado, f).total.kcal) })),
@@ -570,7 +863,15 @@ export function html(ctx) {
         etiquetaMeta: 'Meta diaria',
         formato: (v) => `${num(v)} kcal`,
       }) + `<p class="tenue g-nota">${stats.nutricion.diasEnMeta} de ${stats.nutricion.diasRegistrados} días registrados quedaron dentro de la meta.</p>`
-      : vacio('Registra al menos dos días para ver la tendencia.'),
+      : vacio('Registra al menos dos días para ver la tendencia.'))
+      + (semana ? `
+      <h3 class="sub">Promedio de los últimos 7 días (${semana.dias} con registro)</h3>
+      <div class="rejilla rejilla--2">
+        ${estadistica({ valor: num(semana.kcal), etiqueta: 'kcal al día', detalle: `meta ${num(dia.objetivos.kcal)}`, tono: Math.abs(semana.kcal - dia.objetivos.kcal) <= dia.objetivos.kcal * 0.1 ? 'bien' : 'aviso' })}
+        ${estadistica({ valor: `${num(semana.prot)} g`, etiqueta: 'proteína al día', detalle: `meta ${num(dia.objetivos.prot)} g`, tono: semana.prot >= dia.objetivos.prot * 0.9 ? 'bien' : 'aviso' })}
+        ${estadistica({ valor: `${num(semana.fibra)} g`, etiqueta: 'fibra al día', detalle: `meta ${num(dia.objetivos.fibra)} g` })}
+        ${estadistica({ valor: `${semana.enMeta}/${semana.dias}`, etiqueta: 'días en meta' })}
+      </div>` : ''),
   })}
     </div>
 
@@ -612,16 +913,67 @@ function ultimaCintura(estado) {
   return con.length ? con[con.length - 1].cintura : null;
 }
 
+/** Barra apilada: de dónde vienen las calorías del día, contra la meta. */
+function repartoCalorias(d, hayDatos) {
+  const barra = (r) => `<div class="reparto__barra">
+      <span class="reparto__seg reparto__seg--prot" style="width:${r.prot}%"></span>
+      <span class="reparto__seg reparto__seg--carb" style="width:${r.carb}%"></span>
+      <span class="reparto__seg reparto__seg--grasa" style="width:${r.grasa}%"></span>
+      ${r.otras ? `<span class="reparto__seg reparto__seg--otras" style="width:${r.otras}%"></span>` : ''}
+    </div>`;
+  const texto = (r) => `P ${r.prot}% · C ${r.carb}% · G ${r.grasa}%${r.otras ? ` · alcohol ${r.otras}%` : ''}`;
+  return `<div class="reparto" role="img" aria-label="Calorías por macronutriente. Hoy: ${texto(d.actual)}. Meta: ${texto(d.meta)}.">
+    <h3 class="sub">De dónde vienen tus calorías</h3>
+    <div class="reparto__fila"><span class="reparto__rotulo">Hoy</span>${hayDatos ? barra(d.actual) : '<div class="reparto__barra reparto__barra--vacia"></div>'}<span class="tenue">${hayDatos ? texto(d.actual) : 'sin registros'}</span></div>
+    <div class="reparto__fila"><span class="reparto__rotulo">Meta</span>${barra(d.meta)}<span class="tenue">${texto(d.meta)}</span></div>
+    <div class="reparto__leyenda">
+      <span><i class="reparto__punto reparto__seg--prot"></i>Proteína</span>
+      <span><i class="reparto__punto reparto__seg--carb"></i>Carbohidratos</span>
+      <span><i class="reparto__punto reparto__seg--grasa"></i>Grasas</span>
+    </div>
+  </div>`;
+}
+
+/** Tabla al estilo de la etiqueta nutricional: consumido, meta, diferencia y estado. */
+function tablaNutricional(ev, total) {
+  const fila = (f, sangria = false) => {
+    const dec = f.unidad === 'mg' || f.unidad === 'ml' || f.unidad === 'kcal' ? 0 : 1;
+    const diferencia = redondear(f.consumido - f.meta, dec);
+    const estado = f.estado === 'optimo' ? 'bien' : f.estado === 'exceso' ? 'mal' : 'aviso';
+    const etiqueta = f.tipo === 'limite'
+      ? (f.estado === 'exceso' ? 'sobre el límite' : 'bajo el límite')
+      : ({ optimo: 'en meta', bajo: 'falta', exceso: 'excedido' }[f.estado]);
+    return `<tr>
+      <td class="${sangria ? 'tabla-nut__sangria' : ''}">${esc(f.clave)}${f.tipo === 'limite' ? ' <span class="tenue">(máx.)</span>' : ''}</td>
+      <td class="num"><strong>${num(f.consumido, dec)}</strong> ${f.unidad}</td>
+      <td class="num tenue">${num(f.meta)} ${f.unidad}</td>
+      <td class="num">${diferencia > 0 ? '+' : ''}${num(diferencia, dec)}</td>
+      <td><span class="marca marca--${estado}">${etiqueta}</span></td>
+    </tr>`;
+  };
+  return `<div class="tabla-desliza"><table class="tabla tabla-nut">
+    <thead><tr><th>Nutriente</th><th class="num">Llevas</th><th class="num">Meta</th><th class="num">Diferencia</th><th>Estado</th></tr></thead>
+    <tbody>
+      ${fila(ev.kcal)}${fila(ev.prot)}${fila(ev.carb)}${fila(ev.azucar, true)}${fila(ev.fibra, true)}${fila(ev.grasa)}${fila(ev.sodio)}${fila(ev.agua)}
+    </tbody>
+  </table></div>
+  <p class="tenue g-nota">Proteína y grasa salen de tu peso; los carbohidratos completan las calorías.
+    El azúcar tiene como techo el 10% de las calorías y el sodio 2.000 mg (OMS). Hoy llevas ${num(total.kcal ? (total.prot * 4 / total.kcal) * 100 : 0)}% de las calorías en proteína.</p>`;
+}
+
 function resultadosBusqueda(ctx) {
-  const resultados = buscarAlimentos(busqueda, 14);
-  if (!resultados.length) return vacio('Sin resultados. Prueba con otra palabra.');
+  const resultados = buscarAlimentos(busqueda, categoriaBusqueda && !busqueda ? 80 : 14, categoriaBusqueda);
+  if (!resultados.length) return vacio('Sin resultados. Prueba con otra palabra o con otra categoría.');
   return `<div class="alimentos">
     ${resultados.map((a) => {
     const n = escalar(a, a.porcion);
+    const sellos = a.escaneado ? sellosAltoEn(a) : [];
     return `<article class="alimento">
         <div class="alimento__info">
           <strong>${esc(a.nombre)}</strong>
-          <span class="tenue">${esc(a.cat)} · porción ${a.porcion} g (${esc(a.medida)}) · ${num(n.kcal)} kcal · P ${num(n.prot, 1)} C ${num(n.carb, 1)} G ${num(n.grasa, 1)}</span>
+          <span class="tenue">${esc(a.cat)} · porción ${a.porcion} g (${esc(a.medida)}) · ${num(n.kcal)} kcal · P ${num(n.prot, 1)} C ${num(n.carb, 1)} G ${num(n.grasa, 1)}
+            · <span title="por 100 g">100 g: ${num(a.kcal)} kcal, ${num(a.prot, 1)} g prot.</span></span>
+          ${sellos.length ? `<span>${sellos.map((s) => `<span class="sello sello--chico">ALTO EN ${esc(s.toUpperCase())}</span>`).join(' ')}</span>` : ''}
         </div>
         <input type="number" value="${a.porcion}" min="1" step="5" data-gramos="${esc(a.id)}" aria-label="Gramos de ${esc(a.nombre)}">
         <button class="boton boton--chico boton--principal" data-accion="agregar" data-id="${esc(a.id)}">Agregar</button>

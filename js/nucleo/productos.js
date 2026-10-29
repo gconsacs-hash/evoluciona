@@ -13,7 +13,39 @@
 import { redondear } from './utiles.js';
 
 const API = 'https://world.openfoodfacts.org/api/v2/product/';
-const CAMPOS = 'code,product_name,product_name_es,generic_name,brands,quantity,serving_size,nutriments,image_front_small_url';
+const CAMPOS = 'code,product_name,product_name_es,generic_name,brands,quantity,serving_size,nutriments,image_front_small_url,product_quantity,product_quantity_unit';
+
+/* Límites de los sellos "ALTO EN" de la Ley 20.606, por 100 g o 100 ml
+   (etapa final, vigente desde 2019). */
+export const LIMITES_SELLOS = {
+  solido: { kcal: 275, sodio: 400, azucar: 10, grasaSat: 4 },
+  liquido: { kcal: 70, sodio: 100, azucar: 5, grasaSat: 3 },
+};
+
+/**
+ * Qué sellos le corresponderían al producto según su tabla nutricional.
+ * Es una lectura de la tabla, no del envase: la ley solo exige el sello si al
+ * producto se le agregó azúcar, sodio o grasa, y eso no se ve en los números.
+ */
+export function sellosAltoEn(producto) {
+  const lim = producto.liquido ? LIMITES_SELLOS.liquido : LIMITES_SELLOS.solido;
+  const sellos = [];
+  if (producto.kcal > lim.kcal) sellos.push('calorías');
+  if (producto.azucar > lim.azucar) sellos.push('azúcares');
+  if (producto.grasaSat > lim.grasaSat) sellos.push('grasas saturadas');
+  if (producto.sodio > lim.sodio) sellos.push('sodio');
+  return sellos;
+}
+
+/** Proteína por cada 100 kcal: la mejor forma de comparar dos productos en la góndola. */
+export function densidadProteica(producto) {
+  return producto.kcal ? redondear((producto.prot / producto.kcal) * 100, 1) : 0;
+}
+
+/** "1 L", "500 ml", "750 cc" → líquido. */
+export function esLiquido(texto) {
+  return /\d\s*(ml|cc|l)\b/i.test(String(texto || ''));
+}
 
 /**
  * Valida un código EAN-8, EAN-13 o UPC-A comprobando su dígito verificador.
@@ -90,6 +122,9 @@ export function desdeOpenFoodFacts(datos) {
       azucar: redondear(numero(n.sugars_100g), 1),
       sodio: Math.round(sodio),
       fibra: redondear(numero(n.fiber_100g), 1),
+      grasaSat: redondear(numero(n['saturated-fat_100g']), 1),
+      liquido: esLiquido(p.quantity),
+      gramosEnvase: p.quantity ? porcionDesdeTexto(p.quantity, 0) : 0,
       porcion: porcionDesdeTexto(p.serving_size, porcionDesdeTexto(p.quantity, 100)),
       medida: p.serving_size ? `porción de ${p.serving_size}` : 'porción',
       envase: p.quantity || '',
@@ -155,7 +190,7 @@ export async function buscarProducto(codigo, opciones = {}) {
 }
 
 /** Producto cargado a mano, con los datos del envase. */
-export function productoManual({ codigo, nombre, kcal, prot, carb, grasa, azucar, sodio, fibra, porcion }) {
+export function productoManual({ codigo, nombre, kcal, prot, carb, grasa, azucar, sodio, fibra, porcion, grasaSat, envase, precio, liquido }) {
   const c = normalizarCodigo(codigo);
   const limpio = (v) => Math.max(0, Number(v) || 0);
   return {
@@ -172,10 +207,28 @@ export function productoManual({ codigo, nombre, kcal, prot, carb, grasa, azucar
     azucar: Math.min(limpio(azucar), limpio(carb)),
     sodio: limpio(sodio),
     fibra: limpio(fibra),
+    grasaSat: Math.min(limpio(grasaSat), limpio(grasa)),
+    liquido: liquido === true || liquido === 'on' || liquido === 'si',
+    gramosEnvase: limpio(envase),
+    precioEnvase: limpio(precio),
     porcion: Math.max(1, Number(porcion) || 100),
     medida: 'porción',
     obtenido: new Date().toISOString().slice(0, 10),
   };
+}
+
+/** Anota lo que costó el envase, para que el producto entre en las cuentas de presupuesto. */
+export function conPrecio(producto, precio, gramosEnvase) {
+  const p = Math.max(0, Number(precio) || 0);
+  const g = Math.max(0, Number(gramosEnvase) || producto.gramosEnvase || 0);
+  return { ...producto, precioEnvase: p, gramosEnvase: g };
+}
+
+/** Pesos por cada 100 g (o ml), si se conoce el precio y el tamaño del envase. */
+export function precioPor100(producto) {
+  return producto.precioEnvase > 0 && producto.gramosEnvase > 0
+    ? Math.round((producto.precioEnvase / producto.gramosEnvase) * 100)
+    : null;
 }
 
 /** ¿Puede este navegador leer códigos con la cámara? */

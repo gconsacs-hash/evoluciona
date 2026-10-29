@@ -90,6 +90,7 @@ const SUSTITUTOS = {
   pantorrilla: ['rodilla'],
   core: ['cadera'],
   metcon: ['core', 'rodilla'],
+  movilidad: ['core'],
 };
 
 const MINIMO_EJERCICIOS = 4;
@@ -137,7 +138,7 @@ export function generarPlanSemanal({ dias, equipo, tierMax, objetivo, semilla })
 
     // Si aún quedó corta (nivel bajo y poco equipo), se completa con lo que haya.
     if (ejercicios.length < MINIMO_EJERCICIOS) {
-      const relleno = barajar(disponibles.filter((e) => !enSesion.has(e.id) && e.tipo !== 'cardio'), rnd)
+      const relleno = barajar(disponibles.filter((e) => !enSesion.has(e.id) && e.tipo !== 'cardio' && e.tipo !== 'movilidad'), rnd)
         .sort((a, b) => (usados.has(a.id) ? 1 : 0) - (usados.has(b.id) ? 1 : 0));
       for (const extra of relleno) {
         if (ejercicios.length >= MINIMO_EJERCICIOS) break;
@@ -170,14 +171,17 @@ function construirPrescripcion(ejercicio, tier, objetivo) {
   if (objetivo === 'ganar' && ejercicio.tipo === 'compuesto') { sMax += 1; }
 
   const series = Math.round((sMin + sMax) / 2);
+  // En los ejercicios por tiempo el rango se guarda en segundos, que es lo que
+  // se anota en la serie: así la progresión compara lo mismo que se pidió.
+  const factor = ejercicio.tiempo ? 5 : 1;
   return {
     ejercicioId: ejercicio.id,
     nombre: ejercicio.nombre,
     patron: ejercicio.patron,
     musculos: ejercicio.musculos,
     series,
-    repMin: rMin,
-    repMax: rMax,
+    repMin: rMin * factor,
+    repMax: rMax * factor,
     esTiempo: !!ejercicio.tiempo,
     esCorporal: !!ejercicio.corporal,
     unilateral: !!ejercicio.unilateral,
@@ -217,6 +221,11 @@ export function siguienteCarga(prescripcion, seriesRealizadas) {
   const pesoBase = Math.max(...seriesRealizadas.map((s) => Number(s.peso) || 0));
 
   if (completas === seriesRealizadas.length) {
+    if (prescripcion.esTiempo && pesoBase === 0) {
+      const minutos = prescripcion.unidad === 'min';
+      const salto = minutos ? 2 : 10;
+      return { accion: 'subir_reps', pesoSugerido: 0, mensaje: `Rango completo. Sube a ${prescripcion.repMax + salto} ${minutos ? 'minutos' : 'segundos'} la próxima vez.` };
+    }
     if (prescripcion.esCorporal && pesoBase === 0) {
       return { accion: 'subir_reps', pesoSugerido: 0, mensaje: `Rango completo. Sube a ${prescripcion.repMax + 2} reps o pasa a la variante más difícil.` };
     }
@@ -407,7 +416,7 @@ export function volumenSemanal(sesionesDeLaSemana) {
       const series = (ej.series || []).length;
       if (!info || !series) continue;
       for (const m of info.musculos) {
-        if (m === 'cardio') continue;
+        if (m === 'cardio' || m === 'movilidad') continue;
         conteo[m] = (conteo[m] || 0) + series;
       }
     }

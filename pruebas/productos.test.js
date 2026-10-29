@@ -335,3 +335,50 @@ test('sugiere los alimentos con más aporte del micro que falta', () => {
 test('un micro inexistente no rompe la sugerencia', () => {
   assert.deepEqual(sugerirParaMicro('inventado'), []);
 });
+
+// --- Sellos, precio y comparación en la góndola (29-oct-2026) ---
+
+import { sellosAltoEn, densidadProteica, conPrecio, precioPor100, esLiquido, desdeOpenFoodFacts as desdeOFF, productoManual as manual } from '../js/nucleo/productos.js';
+
+test('los sellos ALTO EN usan los límites de sólidos y de líquidos', () => {
+  const galleta = { kcal: 480, azucar: 30, grasaSat: 9, sodio: 350, liquido: false };
+  assert.deepEqual(sellosAltoEn(galleta), ['calorías', 'azúcares', 'grasas saturadas']);
+  const nectar = { kcal: 55, azucar: 11, grasaSat: 0, sodio: 10, liquido: true };
+  assert.deepEqual(sellosAltoEn(nectar), ['azúcares']);
+  const leche = { kcal: 46, azucar: 4.8, grasaSat: 1, sodio: 44, liquido: true };
+  assert.deepEqual(sellosAltoEn(leche), []);
+});
+
+test('la densidad proteica compara productos por cada 100 kcal', () => {
+  assert.equal(densidadProteica({ kcal: 60, prot: 10 }), 16.7);
+  assert.equal(densidadProteica({ kcal: 0, prot: 0 }), 0);
+});
+
+test('el precio del envase se convierte a pesos por 100 g', () => {
+  const p = conPrecio({ id: 'x', gramosEnvase: 0 }, 1290, 500);
+  assert.equal(precioPor100(p), 258);
+  assert.equal(precioPor100({ precioEnvase: 1000, gramosEnvase: 0 }), null);
+});
+
+test('reconoce líquidos por el contenido declarado', () => {
+  assert.ok(esLiquido('1 L'));
+  assert.ok(esLiquido('500 ml'));
+  assert.ok(esLiquido('350cc'));
+  assert.ok(!esLiquido('400 g'));
+  assert.ok(!esLiquido(''));
+});
+
+test('Open Food Facts trae grasas saturadas, líquido y contenido del envase', () => {
+  const r = desdeOFF({ status: 1, product: { code: '7801234567894', product_name: 'Néctar de durazno', quantity: '1 L', nutriments: { 'energy-kcal_100g': 52, sugars_100g: 12, carbohydrates_100g: 12.5, 'saturated-fat_100g': 0 } } });
+  assert.equal(r.ok, true);
+  assert.equal(r.producto.liquido, true);
+  assert.equal(r.producto.gramosEnvase, 1000);
+  assert.deepEqual(sellosAltoEn(r.producto), ['azúcares']);
+});
+
+test('el producto a mano guarda precio, envase y saturadas sin pasarse de la grasa total', () => {
+  const p = manual({ nombre: 'Queso', kcal: 350, grasa: 27, grasaSat: 40, envase: 250, precio: 3490, liquido: '' });
+  assert.equal(p.grasaSat, 27);
+  assert.equal(precioPor100(p), 1396);
+  assert.equal(p.liquido, false);
+});

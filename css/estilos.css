@@ -643,6 +643,62 @@ input[type='number'] { font-variant-numeric: tabular-nums; }
   .aviso { max-width: none; }
 }
 
+/* --- Cuadro nutricional (29-oct-2026) --- */
+
+.ficha--aviso { color: var(--aviso); border-color: var(--aviso); }
+.tabla-desliza { overflow-x: auto; margin-top: 10px; }
+.tabla-nut td:first-child { white-space: nowrap; }
+.tabla-nut__sangria { padding-left: 24px !important; color: var(--ink-2); }
+.filtros--compactos { margin: 8px 0 4px; }
+.filtros--compactos .chip { padding: 3px 9px; font-size: .75rem; }
+
+.reparto { margin-top: 12px; }
+.reparto__fila { display: grid; grid-template-columns: 44px 1fr; gap: 4px 10px; align-items: center; margin-top: 6px; font-size: .8rem; }
+.reparto__fila > .tenue { grid-column: 2; }
+.reparto__rotulo { color: var(--ink-3); font-weight: 600; }
+.reparto__barra { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: var(--sup-3); gap: 2px; }
+.reparto__seg { display: block; height: 100%; }
+.reparto__seg--prot { background: var(--s1); }
+.reparto__seg--carb { background: var(--s4); }
+.reparto__seg--grasa { background: var(--s5); }
+.reparto__seg--otras { background: var(--base); }
+.reparto__leyenda { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; font-size: .75rem; color: var(--ink-2); }
+.reparto__punto { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+
+.calidad { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.calidad li { font-size: .82rem; }
+.calidad__fila { display: flex; align-items: center; gap: 8px; }
+.calidad__fila .tenue { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+.dietas { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 12px 0; }
+.dieta {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left;
+  padding: 12px; background: var(--sup-2); border: 1px solid var(--linea); border-radius: var(--radio-chico);
+  color: var(--ink); font: inherit; font-size: .84rem; cursor: pointer;
+}
+.dieta:hover { border-color: var(--acento); }
+.dieta__costo { font-size: 1.25rem; font-weight: 700; color: var(--c-nutricion); }
+
+.sello {
+  display: inline-block; padding: 2px 6px; margin: 1px 0; border-radius: 4px;
+  background: #111; color: #fff; border: 1px solid #fff; font-size: .66rem; font-weight: 800; letter-spacing: .02em;
+}
+.sello--chico { font-size: .6rem; padding: 1px 5px; }
+.interruptor { display: flex; align-items: flex-start; gap: 8px; margin: 10px 0; font-size: .84rem; cursor: pointer; }
+.interruptor input { margin-top: 3px; }
+
+/* --- Programas de entrenamiento --- */
+
+.programas { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 11px; }
+.programa {
+  background: var(--sup-2); border: 1px solid var(--linea); border-radius: var(--radio-chico);
+  padding: 12px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+}
+.programa--activo { border-color: var(--acento); box-shadow: inset 0 0 0 1px var(--acento); }
+.programa--cerrado { opacity: .62; }
+.programa__datos { display: flex; gap: 6px; flex-wrap: wrap; }
+.programa__nota { font-size: .8rem; color: var(--ink-2); }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }

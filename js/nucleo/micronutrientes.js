@@ -145,7 +145,8 @@ export function sugerirParaMicro(clave, cantidad = 5) {
   return Object.entries(MICROS_POR_100G)
     .map(([id, micro]) => {
       const alimento = MAPA_ALIMENTOS.get(id);
-      if (!alimento) return null;
+      // Cerrar un déficit con chocolate, caldo en cubo o un trago no es un consejo.
+      if (!alimento || alimento.cat === 'Snack' || alimento.cat === 'Condimento' || alimento.alcohol || alimento.up) return null;
       const porPorcion = ((micro[clave] || 0) * alimento.porcion) / 100;
       return {
         id, nombre: alimento.nombre, gramos: alimento.porcion, medida: alimento.medida,

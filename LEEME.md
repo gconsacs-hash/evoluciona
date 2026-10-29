@@ -58,6 +58,15 @@ baja un 10%; en el medio, te dice que sumes repeticiones. Calcula el **1RM estim
 de Epley, detecta récords personales y muestra el **volumen semanal por grupo muscular** contra el
 rango recomendado de 10-20 series.
 
+**Programas de entrenamiento** (29-oct-2026). Si prefieres seguir algo concreto en vez del plan
+automático, hay 12 programas con nombre: Primeros pasos en casa, Express de 20 minutos, Movilidad y
+espalda sana, De cero a 5 km (8 semanas de intervalos que crecen), Cardio y core en máquinas,
+Calistenia progresiva, Circuito quema grasa, Mancuernas en casa, Glúteos y piernas, Hipertrofia
+torso/pierna, Fuerza básica 5×5 (alterna A/B) y Empuje/Tirón/Piernas. Cada uno declara equipo, nivel,
+días, semanas y cómo progresa; los que no calzan con tu equipo o nivel aparecen cerrados con el
+motivo. Al elegir uno, tu meta semanal pasa a sus días. El catálogo tiene **142 ejercicios**
+(máquinas, bandas, core, cardio y 8 de movilidad, que no suman al volumen muscular).
+
 ### 🥗 Nutrición
 Los objetivos salen de tus datos con fórmulas estándar, no de números inventados:
 
@@ -72,8 +81,23 @@ Los objetivos salen de tus datos con fórmulas estándar, no de números inventa
 - **Fibra**: 14 g por cada 1.000 kcal. **Azúcares libres**: máximo 10% de las calorías
   (ideal bajo 5%, criterio OMS). **Sodio**: máximo 2.000 mg.
 
-Hay **80 alimentos** de consumo habitual en Chile (marraqueta, completo, empanada de pino, jurel en
-lata, palta, quinoa…) con sus macros, azúcar, sodio y fibra por 100 g y su porción típica.
+Hay **204 alimentos** de consumo habitual en Chile (marraqueta, pan amasado, jurel en lata, reineta,
+choritos, mote, harina tostada, chirimoya, kéfir, manjar, pebre, mote con huesillo…) con sus macros,
+azúcar, sodio, fibra y micronutrientes por 100 g y su porción típica, filtrables por categoría.
+
+**Cuadro nutricional del día.** Tabla al estilo de la etiqueta (llevas, meta, diferencia, estado),
+de dónde vienen las calorías (proteína/carbohidrato/grasa contra la meta), cómo vas en cada comida,
+promedio de los últimos 7 días y una **calidad del día** de 0 a 100 armada con seis componentes
+visibles: frutas y verduras (5 porciones de 80 g), proteína, fibra, poco ultraprocesado, azúcar y
+sodio, y variedad.
+
+**Comer bien con poco presupuesto.** Cuatro días completos (la básica para entrenar, alta en
+proteína, vegetariana y presupuesto mínimo) con avena, leche, huevo duro, legumbres, arroz y
+ensaladas, ajustados a tus calorías: costo del día y del mes, y qué le aportan al entrenamiento
+(proteína y carbohidrato por kilo, comidas con 20 g de proteína, hierro, calcio, vitamina C, agua).
+Se registran con un botón. Los precios son **referenciales** (octubre 2026, `js/datos/precios.js`)
+y cada uno anota los suyos; el arroz y las legumbres se cuentan crudos y rendidos al cocinarse.
+Incluye el ranking de cuánto cuesta juntar 30 g de proteína con cada alimento.
 
 **¿Perder grasa y ganar músculo a la vez?** La app responde con tus datos en vez de prometer lo mismo
 a todos. La recomposición corporal está documentada, pero funciona donde hay margen: en quien empieza,
@@ -99,6 +123,11 @@ base de datos quién es. Se usa Open Food Facts, que es abierta y gratuita. Cada
 **queda guardado en tu dispositivo**, así que la segunda vez que escaneas el mismo yogur ya funciona
 sin conexión. Si el producto no está en la base, se carga a mano una vez copiando la tabla del
 envase y queda para siempre.
+
+En el supermercado: el **modo supermercado** deja la cámara leyendo y arma una tabla comparativa
+(calorías, proteína por cada 100 kcal, azúcar, sodio, precio por 100 g) con los **sellos "ALTO EN"**
+que le corresponderían según su tabla (límites de la Ley 20.606 para sólidos y líquidos). Se puede
+anotar lo que costó cada envase y ese producto entra a las cuentas de presupuesto.
 
 La sección "Qué te conviene comer ahora" no es genérica: mira qué macro te falta, cuántas calorías
 te quedan disponibles y si ya vas apretado de azúcar o sodio, y ordena los alimentos por cuánto

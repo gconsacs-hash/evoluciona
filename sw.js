@@ -2,7 +2,7 @@
 // Estrategia: "cache first" para los archivos propios, que son todos estáticos.
 // Al cambiar de versión se borran las cachés viejas.
 
-const VERSION = 'evoluciona-v2';
+const VERSION = 'evoluciona-v3';
 
 const ARCHIVOS = [
   './',
@@ -31,6 +31,10 @@ const ARCHIVOS = [
   './js/nucleo/recordatorios.js',
   './js/nucleo/diabetes.js',
   './js/nucleo/rostro.js',
+  './js/nucleo/presupuesto.js',
+  './js/nucleo/programas.js',
+  './js/datos/precios.js',
+  './js/datos/programas.js',
   './js/ui/recordatorios-ui.js',
   './js/ui/captura-rostro.js',
   './js/ui/vista-diabetes.js',

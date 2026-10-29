@@ -2,7 +2,7 @@
 
 import {
   tarjeta, estadistica, barrasHorizontales, barrasAgrupadas, lineaTiempo,
-  modal, listaNotas, aviso, esc, tablaDatos, vacio,
+  modal, cerrarModal, listaNotas, aviso, esc, tablaDatos, vacio,
 } from './comun.js';
 import {
   generarPlanSemanal, estadoTiers, siguienteCarga, estimar1RM, volumenSemanal, TIERS,
@@ -11,6 +11,7 @@ import {
 import { tieneEfecto } from '../nucleo/tienda.js';
 import { ejerciciosConTendencia, titularesAnalitica, tendenciaPeso } from '../nucleo/analitica.js';
 import { MAPA_EJERCICIOS, NOMBRES_MUSCULOS, EQUIPOS } from '../datos/ejercicios.js';
+import { programasParaPerfil, programaActivo, sesionesDelPrograma, MAPA_PROGRAMAS } from '../nucleo/programas.js';
 import { guardarEntrenamiento, borrarEntrenamiento, diaNutricion } from '../nucleo/almacen.js';
 import { hoyISO, inicioSemana, num, id as nuevoId } from '../nucleo/utiles.js';
 
@@ -126,6 +127,7 @@ export const acciones = {
     if (!sesion) return;
     borrador = {
       id: nuevoId('ses'),
+      programaId: sesion.programaId || null,
       nombre: sesion.nombre,
       tier: sesion.tier,
       descansoSeg: sesion.descansoSeg,
@@ -175,6 +177,7 @@ export const acciones = {
       nombre: borrador.nombre,
       tier: borrador.tier,
       duracionMin: duracion,
+      programaId: borrador.programaId,
       ejercicios: borrador.ejercicios,
     };
     borrador = null;
@@ -188,6 +191,31 @@ export const acciones = {
     ctx.aplicar((estado) => ({ ...estado, planSemanal: { semana: inicioSemana(hoyISO()), variante: (estado.planSemanal?.variante || 0) + 1 } }));
     aviso('Plan regenerado con otra combinación de ejercicios.', 'bien');
   },
+  // --- Programas de entrenamiento ---
+  verPrograma(ctx, elemento) { abrirPrograma(ctx, elemento.dataset.id); },
+  elegirPrograma(ctx, elemento) {
+    const programa = MAPA_PROGRAMAS.get(elemento.dataset.id);
+    if (!programa) return;
+    if (borrador) { aviso('Termina o descarta la sesión en curso antes de cambiar de programa.', 'aviso'); return; }
+    const cambiaDias = ctx.estado.perfil.diasEntreno !== programa.dias;
+    ctx.aplicar((estado) => ({
+      ...estado,
+      programa: { id: programa.id, inicio: hoyISO() },
+      perfil: { ...estado.perfil, diasEntreno: programa.dias },
+    }));
+    cerrarModal();
+    aviso(`Empezaste "${programa.nombre}". ${cambiaDias ? `Tu meta semanal pasó a ${programa.dias} entrenamientos.` : ''}`, 'bien', 4500);
+  },
+  dejarPrograma(ctx) {
+    if (!confirm('¿Dejar el programa y volver al plan automático? Tu historial no se borra.')) return;
+    ctx.aplicar((estado) => ({ ...estado, programa: null }));
+    cerrarModal();
+  },
+  reiniciarPrograma(ctx) {
+    ctx.aplicar((estado) => ({ ...estado, programa: { ...estado.programa, inicio: hoyISO() } }));
+    aviso('Programa reiniciado desde la semana 1.', 'bien');
+  },
+
   sesionLibre(ctx) {
     const plan = planActual(ctx);
     const sesion = plan[0];
@@ -248,8 +276,77 @@ function vistaCronometro() {
   </div>`;
 }
 
+/* ---------- programas ---------- */
+
+function abrirPrograma(ctx, id) {
+  const p = programasParaPerfil({ ...perfilEntreno(ctx) }).find((x) => x.id === id);
+  if (!p) return;
+  const activo = ctx.estado.programa?.id === p.id;
+  const muestra = sesionesDelPrograma(p, 1);
+  modal({
+    titulo: p.nombre,
+    ancho: 760,
+    cuerpo: `
+      <p>${esc(p.resumen)}</p>
+      <div class="programa__datos">
+        <span class="ficha ficha--chica">${p.dias} días por semana</span>
+        <span class="ficha ficha--chica">${p.semanas} semanas</span>
+        <span class="ficha ficha--chica">${esc(EQUIPOS[p.equipo])}</span>
+        <span class="ficha ficha--chica">nivel ${p.tier}</span>
+        <span class="ficha ficha--chica">descanso ${p.descanso} s${p.circuito ? ' · en circuito' : ''}</span>
+      </div>
+      <h3 class="sub">Cómo progresa</h3>
+      <p class="tenue">${esc(p.progresion)}</p>
+      <h3 class="sub">${p.etapas ? 'Primera semana' : 'Las sesiones'}</h3>
+      <div class="plan">${muestra.map((s) => `
+        <article class="sesion">
+          <header><div><strong>${esc(s.nombre)}</strong><span class="tenue">~${s.duracionEstimadaMin} min</span></div></header>
+          <ul class="sesion__lista">${s.ejercicios.map((e) => `<li><span>${esc(e.nombre)}</span><span class="tenue">${esc(e.objetivoTexto)}</span></li>`).join('')}</ul>
+        </article>`).join('')}</div>
+      ${p.etapas ? `<h3 class="sub">Semana a semana</h3>
+        <ol class="tenue">${p.etapas.map((e) => `<li>${esc(e.sesiones[0].ejercicios.find((x) => x.texto && x.id !== 'caminata_rapida')?.texto || '')}</li>`).join('')}</ol>` : ''}
+      <div class="botones">
+        ${!p.disponible
+      ? `<p class="nota nota--aviso"><span class="nota__icono">!</span><span>${esc(p.motivo)}</span></p>`
+      : activo
+        ? '<button class="boton boton--peligro" data-accion="dejarPrograma">Dejar este programa</button>'
+        : `<button class="boton boton--principal" data-accion="elegirPrograma" data-id="${esc(p.id)}">Empezar este programa</button>`}
+      </div>`,
+  });
+}
+
+function perfilEntreno(ctx) {
+  const { estado, stats } = ctx;
+  return { equipo: estado.perfil.equipo, tierMax: stats.tierMax, objetivo: estado.perfil.objetivo, dias: estado.perfil.diasEntreno };
+}
+
+function tarjetaProgramas(ctx) {
+  const lista = programasParaPerfil(perfilEntreno(ctx));
+  const activoId = ctx.estado.programa?.id;
+  return tarjeta({
+    titulo: 'Programas de entrenamiento',
+    extra: `<span class="tenue">${lista.filter((p) => p.disponible).length} de ${lista.length} disponibles para ti</span>`,
+    cuerpo: `<p class="tenue">Si prefieres seguir algo concreto en vez del plan automático: correr 5 km, fuerza 5×5, glúteos, calistenia…
+        El registro de series, la progresión y los récords funcionan igual.</p>
+      <div class="programas">${lista.map((p) => `
+        <article class="programa ${p.id === activoId ? 'programa--activo' : ''} ${p.disponible ? '' : 'programa--cerrado'}">
+          <strong>${esc(p.nombre)}</strong>
+          <div class="programa__datos">
+            ${p.id === activoId ? '<span class="ficha ficha--chica">en curso</span>' : p.recomendado ? '<span class="ficha ficha--chica">recomendado</span>' : ''}
+            <span class="ficha ficha--chica ficha--tenue">${p.dias} días · ${p.semanas} sem</span>
+            <span class="ficha ficha--chica ficha--tenue">${esc(EQUIPOS[p.equipo])}</span>
+          </div>
+          <span class="programa__nota">${esc(p.resumen)}</span>
+          ${p.disponible ? '' : `<span class="marca marca--aviso">! ${esc(p.motivo)}</span>`}
+          <button class="boton boton--chico ${p.disponible && p.id !== activoId ? 'boton--principal' : ''}" data-accion="verPrograma" data-id="${esc(p.id)}">Ver programa</button>
+        </article>`).join('')}</div>`,
+  });
+}
+
 function planActual(ctx) {
   const { estado, stats } = ctx;
+  const activo = programaActivo(estado.programa, hoyISO());
+  if (activo) return activo.sesiones;
   const semana = inicioSemana(hoyISO());
   const variante = estado.planSemanal?.semana === semana ? (estado.planSemanal.variante || 0) : 0;
   return generarPlanSemanal({
@@ -284,6 +381,7 @@ export function html(ctx) {
   const tiers = estadoTiers(stats.nivel, stats.entreno.sesiones, estado.progreso.tiersComprados);
   const volumen = volumenSemanal(sesionesSemana);
   const plan = planActual(ctx);
+  const activo = programaActivo(estado.programa, hoyISO());
 
   return `
   <div class="vista">
@@ -297,7 +395,7 @@ export function html(ctx) {
       ? '<button class="boton boton--chico" data-accion="verDescarga">Descarga</button>' : ''}
         ${tieneEfecto(estado.progreso, 'func:estadisticas')
       ? '<button class="boton boton--chico" data-accion="verAnalitica">Analítica</button>' : ''}
-        ${borrador ? '' : '<button class="boton boton--chico" data-accion="regenerar">Regenerar plan</button>'}
+        ${borrador || activo ? '' : '<button class="boton boton--chico" data-accion="regenerar">Regenerar plan</button>'}
       </div>
     </header>
     ${cronometro ? `<div data-cronometro>${vistaCronometro()}</div>` : '<div data-cronometro></div>'}
@@ -309,7 +407,9 @@ export function html(ctx) {
       ${estadistica({ valor: stats.atributos.fuerza, etiqueta: 'Atributo fuerza', detalle: 'de 100' })}
     </div>
 
-    ${borrador ? vistaBorrador(ctx) : vistaPlan(plan)}
+    ${borrador ? vistaBorrador(ctx) : vistaPlan(plan, activo)}
+
+    ${borrador ? '' : tarjetaProgramas(ctx)}
 
     ${tarjeta({
     titulo: 'Niveles de contenido',
@@ -380,10 +480,18 @@ export function html(ctx) {
   </div>`;
 }
 
-function vistaPlan(plan) {
+function vistaPlan(plan, activo) {
+  const p = activo?.programa;
   return tarjeta({
-    titulo: 'Plan de esta semana',
-    cuerpo: `<div class="plan">${plan.map((s, i) => `
+    titulo: p ? `${p.nombre} · semana ${activo.semana}${activo.terminado ? '' : ` de ${p.semanas}`}` : 'Plan de esta semana',
+    extra: p ? `<div class="botones">
+        <button class="boton boton--chico" data-accion="verPrograma" data-id="${esc(p.id)}">Ver programa</button>
+        <button class="boton boton--chico" data-accion="dejarPrograma">Volver al plan automático</button>
+      </div>` : '<span class="tenue">generado según tu nivel y equipo</span>',
+    cuerpo: `${p ? `<p class="tenue">${esc(p.progresion)}</p>` : ''}
+      ${activo?.terminado ? `<p class="nota nota--bien"><span class="nota__icono">✓</span><span>Completaste las ${p.semanas} semanas del programa.
+        Puedes seguir con él, <button class="boton boton--chico" data-accion="reiniciarPrograma">empezarlo de nuevo</button> o elegir otro más abajo.</span></p>` : ''}
+      <div class="plan">${plan.map((s, i) => `
       <article class="sesion">
         <header>
           <div>
@@ -423,7 +531,8 @@ function vistaBorrador(ctx) {
         </header>
         <p class="nota nota--info"><span class="nota__icono">i</span><span>${esc(sugerencia.mensaje)}${previo ? ` (última vez el ${previo.fecha})` : ''}</span></p>
         <div class="series">
-          <div class="series__cab"><span>Serie</span><span>${ej.esTiempo ? 'Segundos' : 'Reps'}</span><span>Peso (kg)</span><span>1RM</span></div>
+          ${ej.nota ? `<p class="tenue">${esc(ej.nota)}</p>` : ''}
+          <div class="series__cab"><span>Serie</span><span>${ej.unidad === 'min' ? 'Minutos' : ej.esTiempo ? 'Segundos' : 'Reps'}</span><span>Peso (kg)</span><span>1RM</span></div>
           ${ej.series.map((s, j) => `
             <div class="serie">
               <span class="serie__n">${j + 1}</span>

@@ -198,7 +198,7 @@ export function sugerirAlimentos(evaluacion, cantidad = 6) {
   const sodioApretado = evaluacion.sodio.pct > 70;
 
   const candidatos = ALIMENTOS
-    .filter((a) => a.cat !== 'Bebida' && a.cat !== 'Snack')
+    .filter((a) => a.cat !== 'Bebida' && a.cat !== 'Snack' && a.cat !== 'Condimento' && !a.up)
     .map((a) => {
       const n = escalar(a, a.porcion);
       if (kcalDisponibles > 0 && n.kcal > kcalDisponibles * 1.15) return null;
@@ -235,6 +235,108 @@ function motivoSugerencia(n, faltas) {
   if (faltas.faltaGrasa > 8 && n.grasa >= 8) razones.push(`+${Math.round(n.grasa)} g grasas buenas`);
   if (faltas.faltaFibra > 4 && n.fibra >= 3) razones.push(`+${Math.round(n.fibra)} g fibra`);
   return razones.length ? razones.join(' · ') : 'aporte equilibrado';
+}
+
+/**
+ * De dónde vienen las calorías: % de proteína, carbohidrato y grasa en lo
+ * comido y en la meta. Las bebidas alcohólicas aportan calorías que no son
+ * ningún macro, y se informan aparte como "otras".
+ */
+export function distribucionCalorias(total, objetivos) {
+  const reparto = (p, c, g, kcal) => {
+    const base = kcal || p * 4 + c * 4 + g * 9;
+    if (!base) return { prot: 0, carb: 0, grasa: 0, otras: 0 };
+    const prot = Math.round((p * 4 / base) * 100);
+    const carb = Math.round((c * 4 / base) * 100);
+    const grasa = Math.round((g * 9 / base) * 100);
+    return { prot, carb, grasa, otras: Math.max(0, 100 - prot - carb - grasa) };
+  };
+  return {
+    actual: reparto(total.prot, total.carb, total.grasa, Math.max(total.kcal, total.prot * 4 + total.carb * 4 + total.grasa * 9)),
+    meta: reparto(objetivos.prot, objetivos.carb, objetivos.grasa),
+  };
+}
+
+/** Avance de cada comida contra su parte del reparto sugerido. */
+export function resumenPorComida(registros, reparto) {
+  const nombres = [...reparto.map((c) => c.nombre)];
+  for (const r of registros) if (!nombres.includes(r.momento)) nombres.push(r.momento);
+  return nombres.map((nombre) => {
+    const meta = reparto.find((c) => c.nombre === nombre) || null;
+    const total = totalizarRegistros(registros.filter((r) => r.momento === nombre));
+    return {
+      nombre,
+      meta,
+      kcal: Math.round(total.kcal),
+      prot: redondear(total.prot, 1),
+      registros: registros.filter((r) => r.momento === nombre).length,
+      pct: meta?.kcal ? Math.round((total.kcal / meta.kcal) * 100) : null,
+    };
+  });
+}
+
+/* Una porción de fruta o verdura son 80 g (criterio de la OMS para el "5 al día"). */
+const PORCION_FV = 80;
+
+/**
+ * Calidad del día: no cuánto se comió sino qué. Cada componente vale de 0 a
+ * 100 y el puntaje es su promedio; se muestran todos para que se vea de dónde
+ * sale el número y no sea una nota opaca.
+ */
+export function calidadDelDia(registros, evaluacion) {
+  if (!registros.length) return { puntaje: 0, componentes: [], vacio: true };
+
+  let gramosFV = 0, kcalUP = 0, kcalTotal = 0;
+  const distintos = new Set();
+  const categorias = new Set();
+  for (const r of registros) {
+    const a = MAPA_ALIMENTOS.get(r.alimentoId);
+    if (!a) continue;
+    const n = escalar(a, r.gramos);
+    kcalTotal += n.kcal;
+    distintos.add(a.id);
+    if (a.cat) categorias.add(a.cat);
+    if (a.cat === 'Fruta' || a.cat === 'Verdura') gramosFV += r.gramos;
+    if (a.cat === 'Snack' || a.up) kcalUP += n.kcal;
+  }
+
+  const porcionesFV = redondear(gramosFV / PORCION_FV, 1);
+  const pctUP = kcalTotal ? Math.round((kcalUP / kcalTotal) * 100) : 0;
+  const tono = (v) => (v >= 80 ? 'bien' : v >= 50 ? 'aviso' : 'mal');
+  const comp = (clave, nombre, valor, texto) => ({ clave, nombre, valor: Math.round(limitar(valor, 0, 100)), tono: tono(valor), texto });
+
+  const componentes = [
+    comp('fv', 'Frutas y verduras', (porcionesFV / 5) * 100,
+      `${num1(porcionesFV)} de 5 porciones (${Math.round(gramosFV)} g de 400 g).`),
+    comp('prot', 'Proteína', evaluacion.prot.pct,
+      `${evaluacion.prot.consumido} de ${evaluacion.prot.meta} g.`),
+    comp('fibra', 'Fibra', evaluacion.fibra.pct,
+      `${evaluacion.fibra.consumido} de ${evaluacion.fibra.meta} g.`),
+    comp('up', 'Poco ultraprocesado', pctUP <= 10 ? 100 : 100 - (pctUP - 10) * 2.5,
+      `${pctUP}% de las calorías vino de snacks, dulces, fiambres o salsas.`),
+    comp('limites', 'Azúcar y sodio', 100 - Math.max(0, evaluacion.azucar.pct - 100) - Math.max(0, evaluacion.sodio.pct - 100),
+      `Azúcares ${evaluacion.azucar.pct}% y sodio ${evaluacion.sodio.pct}% de su límite.`),
+    comp('variedad', 'Variedad', (distintos.size / 10) * 100,
+      `${distintos.size} alimentos distintos de ${categorias.size} grupos.`),
+  ];
+
+  const puntaje = Math.round(componentes.reduce((s, c) => s + c.valor, 0) / componentes.length);
+  return { puntaje, porcionesFV, pctUP, componentes, vacio: false };
+}
+
+function num1(v) { return String(redondear(v, 1)).replace('.', ','); }
+
+/** Promedios de los últimos días registrados: [{ fecha, total, enMeta }]. */
+export function resumenSemanal(dias) {
+  if (!dias.length) return null;
+  const n = dias.length;
+  return {
+    dias: n,
+    kcal: Math.round(suma(dias, (d) => d.total.kcal) / n),
+    prot: Math.round(suma(dias, (d) => d.total.prot) / n),
+    fibra: Math.round(suma(dias, (d) => d.total.fibra) / n),
+    enMeta: dias.filter((d) => d.enMeta).length,
+  };
 }
 
 /**
